@@ -786,11 +786,6 @@
         var gs = el('button', 'btn', '街景');
         gs.addEventListener('click', function () { openGoogle('sv'); });
         row.appendChild(gs);
-        var go = el('button', 'btn', '謄本系統');
-        go.addEventListener('click', function () {
-          window.open('https://clir.land.moi.gov.tw/', '_blank', 'noopener');
-        });
-        row.appendChild(go);
         host.appendChild(row);
 
         renderEdgeList(host);
