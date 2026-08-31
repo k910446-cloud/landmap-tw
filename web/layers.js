@@ -121,6 +121,10 @@
     urban('UR_CH', '計畫區範圍　彰化縣', CH, '14', '都市計畫圖 © 彰化縣政府', 0.85, 9),
     urban('UR_ML', '計畫區範圍　苗栗縣', ML, '1', '都市計畫圖 © 苗栗縣政府', 0.85, 9),
 
+    cadastre('CAD_HCHG', '地籍圖　新竹縣',
+      'https://imap.hchg.gov.tw/arcgis/rest/services/Tiled3857/Land3857/MapServer/export',
+      '0,1,2', '地籍圖 © 新竹縣政府',
+      '含段界、地號與地段範圍。同群組的「宗地界線　新竹縣」是快取圖磚，載入較快但沒有地號。'),
     cadastre('CAD_TP', '地籍圖　臺北市',
       'https://www.historygis.udd.gov.taipei/arcgis/rest/services/Urban/Land_Dynamic/MapServer/export',
       '3,5', '地籍圖 © 臺北市政府'),
