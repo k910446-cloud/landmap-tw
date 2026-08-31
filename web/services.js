@@ -158,8 +158,8 @@ window.SERVICES = {
       "wkid": 102443
     },
     "臺北市": {
-      "url": "https://www.historygis.udd.gov.taipei/arcgis/rest/services/UrbanPlan2/UrbanPlan2/MapServer/1/query",
-      "wkid": 102443
+      "url": "https://www.historygis.udd.gov.taipei/arcgis/rest/services/UrbanPlan2/UrbanPlan2/MapServer/2/query",
+      "wkid": 102100
     }
   },
   "urbanFields": {

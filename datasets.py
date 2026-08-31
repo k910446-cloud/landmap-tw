@@ -75,10 +75,13 @@ DESIG_COUNTIES = {
 # 靜態版（GitHub Pages）沒有後端可以解析 SHP，改用縣市的即時查詢服務。
 # 這裡只放「允許瀏覽器直連（CORS）」的服務。
 URBAN_LIVE_FOR_STATIC = {
+    # 這個服務是 Web Mercator（102100），不是其他縣市慣用的 TWD97 二度分帶。
+    # 一開始照慣例填了 102443，座標送過去落在地球另一邊，查什麼都是空的。
+    # 圖層 2 是大比例尺（較精細），屬性有 使用分區、建蔽率、容積率。
     '臺北市': {
-        'service': 'arcgis', 'cors': True, 'wkid': 102443,
+        'service': 'arcgis', 'cors': True, 'wkid': 102100,
         'url': ('https://www.historygis.udd.gov.taipei/arcgis/rest/services'
-                '/UrbanPlan2/UrbanPlan2/MapServer/1/query'),
+                '/UrbanPlan2/UrbanPlan2/MapServer/2/query'),
     },
 }
 
