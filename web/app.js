@@ -838,6 +838,155 @@
     });
   }
 
+  // ── 法規依據 ────────────────────────────────────────────
+  //
+  // 查到分區之後接著會想知道「能蓋什麼、蓋多大」。條文取自全國法規資料庫，
+  // 由 build_laws.py 產生 laws.js。這裡只做對照與呈現，不做法律判斷。
+
+  var MUNICIPALITIES = ['臺北市', '新北市', '桃園市', '臺中市', '臺南市', '高雄市'];
+  // 金門、連江屬福建省，「都市計畫法臺灣省施行細則」對它們沒有適用餘地。
+  // 它們各自的施行細則我查不到可靠出處，所以只說明不適用，不亂指一部法規。
+  var FUJIAN = ['金門縣', '連江縣'];
+
+  // 圖資的分區名不一定跟條文字面一致（例：條文寫「保存區」，圖資標「古蹟保存區」）。
+  // 找不到完全相同的名稱時，退而找條文列過、且是它字尾的那個名稱，
+  // 但一定要回報是「對應」來的，不能讓使用者誤以為條文就那樣寫。
+  function lookupZone(table, name) {
+    if (!table || !name) return null;
+    if (table[name] != null) return { value: table[name], matched: null };
+    var best = null;
+    for (var k in table) {
+      if (k.length < 2 || k === name) continue;
+      if (name.length > k.length && name.slice(-k.length) === k) {
+        if (!best || k.length > best.length) best = k;
+      }
+    }
+    return best ? { value: table[best], matched: best } : null;
+  }
+
+  function lawBox(title, kind, county) {
+    if (!window.LAWS || !title) return null;
+    var box = el('div', 'lawbox');
+    var items = [];
+
+    function caps(pairs, note) {
+      var row = el('div', 'lawcaps');
+      pairs.forEach(function (p) { row.appendChild(el('span', 'lawcap', p)); });
+      box.appendChild(row);
+      if (note) box.appendChild(el('p', 'lawnote', note));
+    }
+
+    if (kind === 'nurban_desig') {
+      // 使用地類別 —— 非都市土地使用管制規則第 9 條定有上限
+      var cap = LAWS.nonUrbanCaps[title];
+      if (cap) {
+        caps(['法定建蔽率上限 ' + cap.bcr + '%', '法定容積率上限 ' + cap.far + '%'],
+          '這是法定上限。條文明定直轄市或縣（市）政府「得視實際需要酌予調降」，'
+          + '實際管制值請向當地主管機關確認。');
+      } else if (LAWS.nonUrbanDelegated[title]) {
+        box.appendChild(el('p', 'lawnote',
+          '第 9 條未列此類用地，其建蔽率與容積率由' + LAWS.nonUrbanDelegated[title]
+          + '會同建築管理、地政機關另行訂定。'));
+      }
+      items.push('非都市土地使用管制規則§9', '非都市土地使用管制規則§6');
+
+    } else if (kind === 'nurban_zone') {
+      items.push('非都市土地使用管制規則§5', '非都市土地使用管制規則§6');
+
+    } else if (kind === 'urban_zone') {
+      // 認不出縣市就不能斷定適用哪一部 —— 臺灣省施行細則不適用於六都，
+      // 猜錯會給出完全不對的建蔽率，寧可只列母法。
+      if (!county) {
+        box.appendChild(el('p', 'lawnote',
+          '無法判定這個點屬於哪個縣市，因此不列建蔽率與容積率 ——'
+          + '六都各有自己的自治法規，其餘縣市適用都市計畫法臺灣省施行細則，'
+          + '兩者數字不同，猜錯會誤導。'));
+        items.push('都市計畫法§32', '都市計畫法§39');
+      } else if (FUJIAN.indexOf(county) >= 0) {
+        box.appendChild(el('p', 'lawnote', county
+          + '屬福建省，不適用都市計畫法臺灣省施行細則，'
+          + '建蔽率與容積率請向' + county + '政府建設處查詢。'));
+        items.push('都市計畫法§32', '都市計畫法§39');
+      } else if (MUNICIPALITIES.indexOf(county) < 0) {
+        // 六都以外適用都市計畫法臺灣省施行細則，該細則對各分區定有明確數字
+        var bcr = lookupZone(LAWS.provinceBcr, title);
+        var far = lookupZone(LAWS.provinceFar, title);
+        var pub = lookupZone(LAWS.publicFacilityBcr, title);
+        var list = [], inexact = null;
+        if (bcr) { list.push('建蔽率上限 ' + bcr.value + '%'); inexact = inexact || bcr.matched; }
+        else if (pub) { list.push('公共設施用地建蔽率上限 ' + pub.value + '%'); inexact = inexact || pub.matched; }
+        if (far) { list.push('容積率上限 ' + far.value + '%'); inexact = inexact || far.matched; }
+
+        if (list.length) {
+          var note = '依都市計畫法臺灣省施行細則。條文另定：當地都市計畫書或'
+            + '土地使用分區管制規則有較嚴格規定者，從其規定；'
+            + '住宅區與商業區的容積率另依居住密度分級（見 §34 表格）。';
+          if (inexact) {
+            note = '條文列的是「' + inexact + '」，圖資標示為「' + title
+              + '」，是依名稱對應過來的，請以都市計畫書的實際規定為準。' + note;
+          }
+          caps(list, note);
+        } else {
+          box.appendChild(el('p', 'lawnote',
+            '施行細則的建蔽率（§32、§36）與容積率（§34）條文沒有列到「' + title
+            + '」。這類分區的管制通常直接訂在該都市計畫的土地使用分區管制要點裡，'
+            + '請向當地都市發展局查詢。'));
+        }
+        items.push('都市計畫法臺灣省施行細則§32', '都市計畫法臺灣省施行細則§34',
+          '都市計畫法臺灣省施行細則§36', '都市計畫法臺灣省施行細則§35');
+      } else {
+        var rules = (LAWS.municipalRules || {})[county] || [];
+        box.appendChild(el('p', 'lawnote', county
+          + '是直轄市，各分區的允許使用、建蔽率與容積率規定在它自己的地方自治法規，'
+          + '不適用臺灣省施行細則，所以這裡不列數字，以免給錯。'));
+        if (rules.length) {
+          var rl = el('div', 'lawrefs');
+          rl.appendChild(el('span', 'lawreflabel', county + '的規定在'));
+          rules.forEach(function (r) {
+            var a = el('a', 'lawref', r.name);
+            a.href = r.url; a.target = '_blank'; a.rel = 'noopener';
+            rl.appendChild(a);
+          });
+          box.appendChild(rl);
+        }
+        items.push('都市計畫法§32', '都市計畫法§39');
+      }
+      box.appendChild(el('p', 'lawnote',
+        '個別基地另受該都市計畫的「土地使用分區管制要點」拘束，'
+        + '那是逐案訂在都市計畫書裡的，法規資料庫查不到。'));
+    }
+
+    items.forEach(function (key) {
+      var art = LAWS.articles[key];
+      if (!art) return;
+      var det = el('details', 'lawart');
+      var sum = el('summary');
+      var law = LAWS.laws[art.law] || {};
+      sum.textContent = art.law + ' 第 ' + art.no + ' 條'
+        + (law.revision ? '（' + law.revision + '修正）' : '');
+      det.appendChild(sum);
+      det.appendChild(el('pre', 'lawtext', art.text));
+      var a = el('a', 'lawlink', '看全國法規資料庫原文 ↗');
+      a.href = art.url; a.target = '_blank'; a.rel = 'noopener';
+      det.appendChild(a);
+      box.appendChild(det);
+    });
+
+    var refs = el('div', 'lawrefs');
+    refs.appendChild(el('span', 'lawreflabel', '相關法規'));
+    (LAWS.referenceLinks || []).forEach(function (r) {
+      var a = el('a', 'lawref', r.name);
+      a.href = r.url; a.target = '_blank'; a.rel = 'noopener';
+      refs.appendChild(a);
+    });
+    box.appendChild(refs);
+
+    box.appendChild(el('p', 'lawdisc',
+      '條文取自全國法規資料庫，數字由程式從條文本文解析，僅供對照參考，'
+      + '不構成法律意見。法規時有修正，個案適用以主管機關認定與最新公告為準。'));
+    return box;
+  }
+
   function zoningRow(L, ll, county) {
     var row = el('div', 'zrow');
     row.appendChild(el('div', 'smp-lyr', L.title));
@@ -861,6 +1010,8 @@
       var src = el('div', 'fineprint', L.source);
       src.style.marginTop = '2px';
       row.appendChild(src);
+      var lb = lawBox(L.value, L.key, county);
+      if (lb) row.appendChild(lb);
 
     } else if (L.status === 'needs-download') {
       row.appendChild(el('div', 'zmsg',

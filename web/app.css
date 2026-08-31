@@ -280,3 +280,24 @@ dd{margin:0;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
 
 /* 線上版（無後端）的提示 */
 .warn-note{color:var(--accent)!important}
+
+/* 法規依據 */
+.lawbox{margin-top:9px;padding-top:9px;border-top:1px dashed var(--line)}
+.lawcaps{display:flex;flex-wrap:wrap;gap:6px}
+.lawcap{font-size:12px;color:#fff;background:var(--brand-2);border-radius:6px;padding:3px 9px;
+  font-variant-numeric:tabular-nums}
+.lawnote{font-size:12px;color:var(--ink-2);line-height:1.55;margin:7px 0 0}
+.lawart{margin-top:7px;border:1px solid var(--line);border-radius:8px;background:var(--bg)}
+.lawart>summary{cursor:pointer;padding:6px 10px;font-size:12.5px;color:var(--ink-2);
+  list-style:none}
+.lawart>summary::-webkit-details-marker{display:none}
+.lawart>summary::before{content:"▸ ";color:var(--ink-3)}
+.lawart[open]>summary::before{content:"▾ "}
+.lawtext{margin:0;padding:0 10px 8px;font:12px/1.75 inherit;white-space:pre-wrap;
+  color:var(--ink);overflow-wrap:anywhere}
+.lawlink{display:inline-block;margin:0 10px 9px;font-size:12px}
+.lawrefs{display:flex;flex-wrap:wrap;gap:5px;align-items:center;margin-top:9px}
+.lawreflabel{font-size:11px;color:var(--ink-3)}
+.lawref{font-size:11.5px;border:1px solid var(--line);border-radius:6px;padding:2px 7px;
+  text-decoration:none}
+.lawdisc{font-size:11px;color:var(--ink-3);line-height:1.5;margin:8px 0 0}
