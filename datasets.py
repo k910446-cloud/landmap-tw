@@ -142,7 +142,7 @@ URBAN_COUNTIES = {
 
     # 彰化縣：縣府公開 ArcGIS 服務，CITYPLANS 圖層 19 = USEZONE_FULL
     '彰化縣': {
-        'service': 'arcgis',
+        'service': 'arcgis', 'cors': True,
         'url': ('https://urbangis.chcg.gov.tw/arcgis/rest/services'
                 '/CHCGMap/CITYPLANS/MapServer/19/query'),
         'wkid': 102443,
@@ -330,7 +330,7 @@ CADASTRE_COUNTIES = {
         'source': '苗栗縣政府 栗智網 公開圖服務',
     },
     '彰化縣': {
-        'service': 'arcgis', 'wkid': 102443,
+        'service': 'arcgis', 'wkid': 102443, 'cors': True,
         'url': ('https://urbangis.chcg.gov.tw/arcgis/rest/services'
                 '/CHCGMap/LAND/MapServer/0/query'),
         'sect': ['SECNAME'], 'sectcode': ['SECT'], 'landno': ['LAND_NO'],

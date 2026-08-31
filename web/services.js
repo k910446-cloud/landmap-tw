@@ -115,11 +115,38 @@ window.SERVICES = {
         "UNIT"
       ],
       "source": "新竹縣政府 智慧圖資雲 公開圖服務"
+    },
+    "彰化縣": {
+      "url": "https://urbangis.chcg.gov.tw/arcgis/rest/services/CHCGMap/LAND/MapServer/0/query",
+      "wkid": 102443,
+      "sect": [
+        "SECNAME"
+      ],
+      "sectcode": [
+        "SECT"
+      ],
+      "landno": [
+        "LAND_NO"
+      ],
+      "landno8": [
+        "LANDNO8"
+      ],
+      "area": [
+        "AREA"
+      ],
+      "town": [
+        "TNAME"
+      ],
+      "source": "彰化縣政府 公開圖服務"
     }
   },
   "urban": {
     "桃園市": {
       "url": "https://urbandatasrv.tycg.gov.tw/server/rest/services/TY_UPGIS/TYMap_SDE/MapServer/2/query",
+      "wkid": 102443
+    },
+    "彰化縣": {
+      "url": "https://urbangis.chcg.gov.tw/arcgis/rest/services/CHCGMap/CITYPLANS/MapServer/19/query",
       "wkid": 102443
     },
     "臺中市": {
