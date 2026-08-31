@@ -1,0 +1,22 @@
+# 預設讓 Git 自行判斷文字檔並正規化為 LF 入庫
+* text=auto
+
+# Windows 的批次檔與 VBScript 一定要 CRLF，否則在 Windows 上會執行失敗
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.vbs text eol=crlf
+
+# 這些保持 LF
+*.py text eol=lf
+*.js text eol=lf
+*.css text eol=lf
+*.html text eol=lf
+*.json text eol=lf
+*.webmanifest text eol=lf
+*.md text eol=lf
+*.svg text eol=lf
+
+# 二進位，不要做行尾轉換
+*.png binary
+*.jpg binary
+*.zip binary

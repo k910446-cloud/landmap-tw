@@ -1,0 +1,341 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,maximum-scale=5">
+<meta name="theme-color" content="#1d3b2f">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>地籍圖 / 使用分區查詢</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="vendor/leaflet.css">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+
+<div id="map" role="application" aria-label="地圖"></div>
+
+<!-- 頂端搜尋列 -->
+<header id="topbar">
+  <button id="btn-panel" class="icon-btn" title="開關面板" aria-label="開關面板">☰</button>
+  <div id="searchwrap">
+    <input id="search" type="search" autocomplete="off" spellcheck="false"
+           placeholder="搜尋地名／地址，或貼上座標">
+    <button id="btn-search" class="icon-btn" title="搜尋" aria-label="搜尋">🔍</button>
+  </div>
+  <button id="btn-landno" class="icon-btn" title="在地圖上標示地號" aria-label="標示地號">地號</button>
+  <button id="btn-locate" class="icon-btn" title="定位到我的位置" aria-label="定位">◎</button>
+</header>
+
+<div id="hint" class="hint" hidden></div>
+<div id="loc-hud" class="lochud" hidden></div>
+
+<!-- 側面板 / 手機下方抽屜 -->
+<aside id="panel" aria-label="資訊面板">
+  <div id="grabber" aria-hidden="true"></div>
+
+  <nav id="tabs" role="tablist">
+    <button class="tab is-on" data-tab="query"  role="tab">點位</button>
+    <button class="tab"       data-tab="layers" role="tab">圖層</button>
+    <button class="tab"       data-tab="draw"   role="tab">測繪</button>
+    <button class="tab"       data-tab="sect"   role="tab">地段</button>
+    <button class="tab"       data-tab="marks"  role="tab">收藏</button>
+    <button class="tab"       data-tab="about"  role="tab">說明</button>
+  </nav>
+
+  <div id="panes">
+
+    <!-- ── 點位 ───────────────────────────── -->
+    <section class="pane is-on" data-pane="query">
+      <p class="empty" id="query-empty">在地圖上點一下，這裡會顯示該點的座標、行政區與地段，
+        以及各使用分區圖層在該點的顏色取樣。</p>
+      <div id="query-body" hidden>
+        <div class="card" id="card-cadastre">
+          <h3>地號</h3>
+          <div id="cadastre"><p class="empty">查詢中…</p></div>
+        </div>
+
+        <div class="card">
+          <h3>行政區與地段</h3>
+          <dl id="admin-info"><dd class="muted">查詢中…</dd></dl>
+        </div>
+
+        <div class="card">
+          <h3>使用分區 / 使用類別</h3>
+          <div id="zoning"><p class="empty">查詢中…</p></div>
+        </div>
+
+        <div class="card">
+          <h3>圖磚顏色取樣</h3>
+          <div id="samples"></div>
+          <p class="fineprint">上面的名稱來自政府開放資料的圖徵屬性，是法定名稱；
+             這裡的顏色只是圖磚取樣，供對照用。</p>
+        </div>
+
+        <div class="card">
+          <h3>座標</h3>
+          <dl id="coord-info"></dl>
+          <div class="row">
+            <button class="btn" id="btn-copy">複製座標</button>
+            <button class="btn" id="btn-mark">加入收藏</button>
+          </div>
+          <div class="row" id="gmap-row">
+            <button class="btn" id="btn-gmap">Google 地圖</button>
+            <button class="btn" id="btn-gsv">街景</button>
+            <button class="btn" id="btn-gnav">導航</button>
+            <button class="btn" id="btn-gearth">Google 地球</button>
+          </div>
+          <p class="fineprint">在手機上會直接開 Google 地圖 App。導航是以這個點為終點。</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── 圖層 ───────────────────────────── -->
+    <section class="pane" data-pane="layers">
+      <div class="card">
+        <h3>地號標示</h3>
+        <div class="lyr-head">
+          <input type="checkbox" id="cb-landno">
+          <label class="lyr-name" for="cb-landno">在地圖上標示地號</label>
+        </div>
+        <p class="lyr-note">直接向縣市地籍服務要畫面內的宗地，畫出界線並標上地號。
+           涵蓋臺北、桃園、臺中、新竹市、新竹縣、苗栗、彰化，放大到第 17 級以上才會標。</p>
+        <p class="lyr-note" id="landno-note"></p>
+        <p class="lyr-note"><b>注意</b>：底圖「臺灣通用電子地圖」上的
+           100號、112號那種數字是<b>門牌</b>，不是地號。要看地號請開這個功能，
+           或把底圖換成「電子地圖（灰階）」或「空白」比較不會混淆。</p>
+      </div>
+
+      <div class="card">
+        <h3>底圖</h3>
+        <div id="base-list" class="chips"></div>
+      </div>
+      <div id="overlay-groups"></div>
+
+      <div class="card">
+        <h3>自訂圖層</h3>
+        <p class="fineprint" style="margin-top:0">
+          貼上任何 WMTS／XYZ 圖磚網址就多一個圖層。取得
+          <b>都市計畫使用分區</b>（國土管理署城鄉發展分署付費介接服務）或
+          <b>宗地地籍圖</b>（國土測繪中心申請介接）的網址後，加在這裡即可，
+          不必改程式。座標系需為 EPSG:3857。
+        </p>
+        <label class="fld"><span>圖層名稱</span>
+          <input id="cl-name" type="text" placeholder="例：都市計畫使用分區"></label>
+        <label class="fld"><span>圖磚網址範本</span>
+          <input id="cl-url" type="text" spellcheck="false"
+                 placeholder="https://…/{z}/{y}/{x}"></label>
+        <p class="fineprint" style="margin-top:0">
+          用 <code>{z}</code> <code>{x}</code> <code>{y}</code> 代表層級與列欄。
+          國土測繪中心系列的順序是 <code>/{z}/{y}/{x}</code>；
+          一般 XYZ 圖磚是 <code>/{z}/{x}/{y}</code>。
+        </p>
+        <div class="row">
+          <button class="btn primary" id="cl-add">加入圖層</button>
+        </div>
+        <div id="cl-list"></div>
+      </div>
+
+      <div class="card">
+        <h3>圖層位置校正</h3>
+        <p class="fineprint" style="margin-top:0">
+          不同來源的圖資可能有套疊誤差。這裡整體平移疊圖圖層，單位公尺，
+          正值往東／往北。校正值存在這台裝置上。
+        </p>
+        <label class="fld"><span>東西方向（公尺）</span>
+          <input id="off-x" type="range" min="-50" max="50" step="0.5" value="0"></label>
+        <label class="fld"><span>南北方向（公尺）</span>
+          <input id="off-y" type="range" min="-50" max="50" step="0.5" value="0"></label>
+        <div class="row">
+          <span id="off-val" class="fineprint" style="margin:0"></span>
+          <button class="btn" id="off-reset">歸零</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── 測繪 ───────────────────────────── -->
+    <section class="pane" data-pane="draw">
+      <div class="card">
+        <h3>定位</h3>
+        <div class="row" style="margin-top:0">
+          <button class="btn primary" id="loc-toggle">開始定位</button>
+          <button class="btn" id="loc-follow" disabled>跟隨中</button>
+          <button class="btn" id="loc-query" disabled>查詢此處</button>
+        </div>
+        <div class="row">
+          <button class="btn" id="loc-rec" disabled>開始記錄軌跡</button>
+        </div>
+        <dl id="loc-info"></dl>
+        <p class="fineprint">持續追蹤會畫出目前位置與精度圈，拖動地圖即解除跟隨。
+           軌跡每 3 公尺記一點，停止時存成目前專案的一條線。
+           位置只留在這台裝置上；只有你按「查詢此處」時座標才會送到本機伺服器做圖徵查詢。</p>
+        <p class="fineprint"><b>手機在區網要用定位</b>，請改用
+           <code>python start.py --lan --https</code> 啟動 —— 瀏覽器只在 https
+           或 localhost 底下給 GPS 權限。</p>
+      </div>
+
+      <div class="card">
+        <h3>繪製與量測</h3>
+        <div id="draw-tools" class="chips"></div>
+        <div id="draw-live" class="dwlive" hidden></div>
+        <p class="fineprint">面積與距離換算成 TWD97 二度分帶後計算，跟地政圖資同一套座標。
+           面積同時給 m²／公頃／坪／甲。線與面可按 Enter 或雙擊結束，Esc 取消。</p>
+      </div>
+
+      <div class="card">
+        <h3>專案</h3>
+        <label class="fld"><span>目前專案</span>
+          <select id="draw-project"></select></label>
+        <div class="row">
+          <button class="btn" id="dw-new">新增</button>
+          <button class="btn" id="dw-rename">改名</button>
+          <button class="btn" id="dw-del">刪除</button>
+          <button class="btn" id="dw-clear">清空物件</button>
+        </div>
+        <div class="row">
+          <button class="btn" id="dw-export">匯出專案</button>
+          <button class="btn" id="dw-geojson">匯出 GeoJSON</button>
+          <button class="btn" id="dw-import">匯入專案</button>
+        </div>
+        <p class="fineprint">GeoJSON 可直接丟進 QGIS、Google Earth 或其他 GIS 軟體。</p>
+      </div>
+
+      <div class="card">
+        <h3>物件</h3>
+        <div id="draw-list"></div>
+      </div>
+    </section>
+
+    <!-- ── 地段 ───────────────────────────── -->
+    <section class="pane" data-pane="sect">
+      <div class="card">
+        <h3>地段瀏覽</h3>
+        <p class="fineprint">資料來自國土測繪中心代碼服務。選到「段」之後可把段碼複製到
+           地政系統查詢，地圖也會開啟段籍圖。</p>
+        <label class="fld"><span>縣市</span>
+          <select id="sel-county"><option value="">載入中…</option></select></label>
+        <label class="fld"><span>鄉鎮市區</span>
+          <select id="sel-town" disabled><option value="">請先選縣市</option></select></label>
+        <label class="fld"><span>段小段</span>
+          <select id="sel-sect" disabled><option value="">請先選鄉鎮市區</option></select></label>
+        <dl id="sect-info"></dl>
+        <div class="row">
+          <button class="btn" id="btn-sect-copy" disabled>複製段代碼</button>
+          <button class="btn" id="btn-sect-official" disabled>到官方系統查地號</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── 收藏 ───────────────────────────── -->
+    <section class="pane" data-pane="marks">
+      <div class="card">
+        <h3>收藏的點位</h3>
+        <div id="mark-list"><p class="empty">還沒有收藏。在「點位」頁按「加入收藏」。</p></div>
+        <div class="row">
+          <button class="btn" id="btn-export">匯出 JSON</button>
+          <button class="btn" id="btn-import">匯入 JSON</button>
+        </div>
+      </div>
+      <div class="card">
+        <h3>顏色對照表</h3>
+        <p class="fineprint">你為圖磚顏色建立的分區／類別名稱，存在這台裝置上。</p>
+        <div id="palette-list"><p class="empty">尚未建立任何對照。</p></div>
+      </div>
+    </section>
+
+    <!-- ── 說明 ───────────────────────────── -->
+    <section class="pane" data-pane="about">
+      <div class="card">
+        <h3>這個 App 查得到什麼</h3>
+        <ul class="tight">
+          <li><b>非都市土地使用分區</b>（特定農業區、山坡地保育區…）、
+              <b>使用地類別／編定</b>（農牧用地、乙種建築用地…），以及
+              <b>都市計畫使用分區</b>（臺北、新北、桃園、新竹市、苗栗、臺中、彰化、高雄）的<b>法定名稱與代碼</b>。
+              名稱來自政府開放資料的圖徵屬性，不是用顏色猜的；第一次查某縣市會提示下載該縣市圖資，
+              之後離線可用，座標也不會送出去。</li>
+          <li><b>座標查地號</b>：點一下就顯示段名、地號與面積
+              （臺北、桃園、臺中、新竹市、新竹縣、苗栗、彰化），命中的宗地會用橘框標出來。</li>
+          <li><b>地圖上顯示地號</b>：「圖層」頁的「地籍圖（含地號）」群組。</li>
+          <li><b>都市計畫圖層</b>：使用分區著色圖與計畫區範圍框。</li>
+          <li><b>段籍圖</b>、<b>公有土地地籍圖</b>：地段界線、段名，公有地為宗地層級。
+              新竹縣與苗栗縣另有宗地界線圖磚。</li>
+          <li><b>非都市土地使用分區圖</b>與<b>使用地類別圖</b>圖磚套疊。</li>
+          <li><b>國土利用現況調查</b>：實際使用情形，可與法定編定對照。</li>
+          <li>點位的 <b>WGS84 經緯度</b>、<b>TWD97 二度分帶</b>、<b>TWD67 二度分帶</b> 座標。</li>
+          <li>該點所屬 <b>縣市／鄉鎮市區／地政事務所／地段／村里</b>。</li>
+          <li><b>繪製與量測</b>：點、線、面、圓，距離與面積（m²／公頃／坪／甲），
+              物件可命名與設定樣式，依<b>專案</b>分類，可匯出 JSON 或 GeoJSON。</li>
+          <li><b>歷史圖資</b>：中研院「臺灣百年歷史地圖」7 種，可與現況套疊比對。</li>
+          <li><b>圖層位置校正</b>：修正不同來源圖資的套疊誤差。</li>
+          <li><b>定位</b>：持續追蹤、精度圈、即時座標、以目前位置直接查詢、軌跡記錄。</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>資料涵蓋範圍</h3>
+        <div id="coverage"><p class="empty">載入中…</p></div>
+        <p class="fineprint">「已下載」的縣市離線可用；「即時查詢」走該縣市公開的圖服務，
+           不佔空間但需要連線。</p>
+      </div>
+
+      <div class="card">
+        <h3>都市計畫使用分區</h3>
+        <p><b>已內建 8 個縣市</b>：臺北、新北、桃園、新竹市、苗栗、臺中、彰化、高雄，
+           直接顯示法定名稱。其中桃園、新竹市、苗栗、臺中、彰化走縣市公開的查詢服務，
+           連下載都不用；多數還附上建蔽率與容積率，臺中另有上限容積與細部計畫名稱。</p>
+        <p><b>新竹縣</b>的分區系統只涵蓋竹東鎮且是地段地號查詢；<b>臺南市</b>圖台連不上；
+           <b>其餘縣市</b>的平台與格式各自不同，要逐一接。
+           上面的「資料涵蓋範圍」可以看到目前狀況。</p>
+        <p>想一次覆蓋全國，可向國土管理署城鄉發展分署申請
+           「全國土地使用分區圖資介接服務」（付費），把 WMTS 網址貼到「圖層」頁的
+           <b>自訂圖層</b>；那是圖磚，看得到界線但點不出名稱。</p>
+        <p>另外：當某點查不到非都市分區時，多半就代表<b>它位於都市計畫區內</b>
+           ——非都市分區圖涵蓋所有非都市土地，落在外面的就是都市計畫區或國家公園。</p>
+      </div>
+      <div class="card">
+        <h3>地號與地籍圖</h3>
+        <p><b>座標查地號已可用於 7 個縣市</b>：臺北市、桃園市、臺中市、新竹市、新竹縣、苗栗縣、彰化縣。
+           這幾個縣市把自己的地籍圖以公開圖服務發布，點一下地圖就會顯示段名、地號，
+           部分還有面積（同時給坪）。這些圖層只有圖籍屬性，<b>沒有所有權人等個資</b>。</p>
+        <p>「圖層」頁的<b>「地籍圖（含地號）」</b>群組可以把地號直接標在地圖上
+           （臺北、桃園、臺中、新竹市、彰化、苗栗）；「地籍」群組另有新竹縣與苗栗縣的
+           宗地界線快取圖磚，載入較快但沒有地號。</p>
+        <p><b>其餘縣市</b>的宗地地籍圖與座標查地號，國土測繪中心是以
+           <em>申請介接、綁定網域或 IP</em> 的方式提供；地政司的查詢圖台另有圖形驗證碼保護。
+           這個 App 不會去繞過那些機制。到
+           <a href="https://maps.nlsc.gov.tw/S09SOA/homePage.action?Language=ZH" target="_blank" rel="noopener">國土測繪圖資服務雲</a>
+           申請核准後，把地籍圖磚網址加到<b>自訂圖層</b>即可。正式謄本請用
+           <a href="https://clir.land.moi.gov.tw/" target="_blank" rel="noopener">全國地政電子謄本系統</a>。</p>
+      </div>
+      <div class="card">
+        <h3>官方查詢入口</h3>
+        <ul class="tight" id="official-links">
+          <li><a href="https://easymap.land.moi.gov.tw/" target="_blank" rel="noopener">地籍圖資網路便民服務系統</a>（內政部地政司）— 查地號、地籍圖</li>
+          <li><a href="https://luz.nlma.gov.tw/web/default.aspx" target="_blank" rel="noopener">全國土地使用分區資料查詢系統</a>（國土管理署）— 都市計畫／非都市／國家公園分區</li>
+          <li><a href="https://maps.nlsc.gov.tw/" target="_blank" rel="noopener">國土測繪圖資服務雲</a>（國土測繪中心）</li>
+          <li><a href="https://clir.land.moi.gov.tw/" target="_blank" rel="noopener">全國地政電子謄本系統</a> — 正式謄本</li>
+        </ul>
+      </div>
+      <div class="card warn">
+        <h3>免責聲明</h3>
+        <p>本 App 僅套疊政府開放圖磚供<b>參考</b>，不是地籍謄本，也不是土地使用分區證明。
+           涉及權利、交易、申請許可時，請以地政事務所核發之謄本與
+           直轄市／縣（市）政府核發之土地使用分區證明為準。</p>
+      </div>
+    </section>
+
+  </div>
+</aside>
+
+<canvas id="sampler" width="256" height="256" hidden></canvas>
+<input id="file-import" type="file" accept="application/json,.json" hidden>
+<input id="file-project" type="file" accept="application/json,.json" hidden>
+
+<script src="vendor/leaflet.js"></script>
+<script src="twd97.js"></script>
+<script src="layers.js"></script>
+<script src="draw.js"></script>
+<script src="locate.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

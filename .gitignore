@@ -1,0 +1,25 @@
+# 自簽憑證 —— landmap.key 是私鑰，絕對不要進版控。
+# 執行 start.py --https 時會自動重新產生。
+certs/
+
+# 按需下載的縣市圖資（178 MB 起跳），App 會自己抓，不需要進版控
+data/
+
+# 執行期產生的檔案
+.server.pid
+目前網址.txt
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# 編輯器與作業系統
+.vscode/
+.idea/
+*.swp
+Thumbs.db
+desktop.ini
+.DS_Store

@@ -1,0 +1,16 @@
+{
+  "name": "地籍圖 / 使用分區查詢",
+  "short_name": "地籍查詢",
+  "description": "套疊內政部國土測繪中心開放圖磚，隨時查詢地段、非都市土地使用分區與使用地類別。",
+  "lang": "zh-Hant-TW",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#f6f7f5",
+  "theme_color": "#1d3b2f",
+  "icons": [
+    { "src": "icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "icons/icon-maskable.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "maskable" }
+  ]
+}

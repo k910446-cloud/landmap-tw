@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="地籍查詢">
+  <rect width="512" height="512" rx="112" fill="#1d3b2f"/>
+  <g fill="none" stroke="#7fd6ac" stroke-width="14" stroke-linejoin="round">
+    <path d="M96 150 L232 106 L336 150 L416 118"/>
+    <path d="M96 150 L96 394 L232 350 L336 394 L416 362 L416 118"/>
+    <path d="M232 106 L232 350"/>
+    <path d="M336 150 L336 394"/>
+  </g>
+  <g fill="none" stroke="#3f7a61" stroke-width="8" stroke-dasharray="18 14">
+    <path d="M96 232 L416 200"/>
+    <path d="M96 312 L416 280"/>
+  </g>
+  <circle cx="300" cy="252" r="44" fill="none" stroke="#e6a05f" stroke-width="20"/>
+  <path d="M332 284 L392 344" stroke="#e6a05f" stroke-width="26" stroke-linecap="round"/>
+</svg>

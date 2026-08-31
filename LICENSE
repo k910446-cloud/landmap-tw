@@ -1,0 +1,37 @@
+MIT License
+
+Copyright (c) 2026 landmap-tw contributors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+---
+
+本授權僅涵蓋本專案的程式碼。
+
+程式碼內含的第三方元件：
+  - Leaflet 1.9.4（web/vendor/）—— BSD-2-Clause，版權歸 Volodymyr Agafonkin
+    與 CloudMade，詳見 https://github.com/Leaflet/Leaflet
+
+本專案「不」包含任何政府圖資。所有圖資都是執行時向各機關的公開服務取得，
+其著作權與使用條款屬各該機關，詳見 README 的「資料來源」一節：
+  - 內政部國土測繪中心（開放 WMTS／API）
+  - 內政部國土管理署（政府資料開放授權條款第 1 版）
+  - 各直轄市／縣市政府之開放資料與公開圖服務
+  - 中央研究院人社中心 GIS 專題中心（臺灣百年歷史地圖）
+  - OpenStreetMap 貢獻者（ODbL）
