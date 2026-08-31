@@ -72,6 +72,17 @@ DESIG_COUNTIES = {
 # 但部分縣市自己把 SHP 放在開放資料平臺上，可以直接用。
 # 這裡的值是完整下載網址，不走內政部的 resource id 格式。
 
+# 靜態版（GitHub Pages）沒有後端可以解析 SHP，改用縣市的即時查詢服務。
+# 這裡只放「允許瀏覽器直連（CORS）」的服務。
+URBAN_LIVE_FOR_STATIC = {
+    '臺北市': {
+        'service': 'arcgis', 'cors': True, 'wkid': 102443,
+        'url': ('https://www.historygis.udd.gov.taipei/arcgis/rest/services'
+                '/UrbanPlan2/UrbanPlan2/MapServer/1/query'),
+    },
+}
+
+
 URBAN_COUNTIES = {
     # 臺北市都市計畫使用分區圖（臺北市資料大平臺）
     # 細部計畫在前、主要計畫在後 —— 查詢時先問細部計畫，答案比較精確
@@ -123,7 +134,7 @@ URBAN_COUNTIES = {
     # 桃園市：都市發展局的公開 ArcGIS 服務，直接點查詢，不必下載
     # 圖層 2 = 都市計畫使用分區_SDE_UseZoneAll，座標系 wkid 102443（TWD97 TM2）
     '桃園市': {
-        'service': 'arcgis',
+        'service': 'arcgis', 'cors': True,
         'url': ('https://urbandatasrv.tycg.gov.tw/server/rest/services'
                 '/TY_UPGIS/TYMap_SDE/MapServer/2/query'),
         'wkid': 102443,
@@ -140,7 +151,7 @@ URBAN_COUNTIES = {
     # 臺中市：都發局公開 ArcGIS 服務，URBAN97 圖層 1 = 都市計畫分區
     # 欄位是中文，且含建蔽率、容積率、上限容積、細部計畫區
     '臺中市': {
-        'service': 'arcgis',
+        'service': 'arcgis', 'cors': True,
         'url': ('https://mcgbm.taichung.gov.tw/arcgis/rest/services'
                 '/URBAN97/MapServer/1/query'),
         'wkid': 102443,
@@ -148,7 +159,7 @@ URBAN_COUNTIES = {
 
     # 新竹市：都發處公開 ArcGIS，Landuse_NoCache 圖層 1 = 都市計畫使用分區
     '新竹市': {
-        'service': 'arcgis',
+        'service': 'arcgis', 'cors': True,
         'url': ('https://urbanmap.hccg.gov.tw/server/rest/services'
                 '/UrbanPlan/Landuse_NoCache/MapServer/1/query'),
         'wkid': 102443,
@@ -268,7 +279,7 @@ def total_size(key, county):
 
 CADASTRE_COUNTIES = {
     '臺中市': {
-        'service': 'arcgis', 'wkid': 102443,
+        'service': 'arcgis', 'wkid': 102443, 'cors': True,
         'url': ('https://mcgbm.taichung.gov.tw/arcgis/rest/services'
                 '/urpd_tccgupMap/MapServer/1/query'),
         'sect': ['landdesc'], 'sectcode': ['sectno'],
@@ -277,7 +288,7 @@ CADASTRE_COUNTIES = {
         'source': '臺中市政府都市發展局 公開圖服務',
     },
     '臺北市': {
-        'service': 'arcgis', 'wkid': 102443,
+        'service': 'arcgis', 'wkid': 102443, 'cors': True,
         'url': ('https://www.historygis.udd.gov.taipei/arcgis/rest/services'
                 '/Urban/Land_Dynamic/MapServer/5/query'),
         'sect': ['sect_name'], 'sectcode': ['sect_id'], 'landno': ['land_no'],
@@ -286,7 +297,7 @@ CADASTRE_COUNTIES = {
         'source': '臺北市政府都市發展局 公開圖服務',
     },
     '桃園市': {
-        'service': 'arcgis', 'wkid': 102443,
+        'service': 'arcgis', 'wkid': 102443, 'cors': True,
         'url': ('https://urbandatasrv.tycg.gov.tw/server/rest/services'
                 '/TY_UPGIS/TYMap_SDE/MapServer/1/query'),
         # 這個圖層只給段碼不給段名，段名用國土測繪中心的點位反查補上
@@ -295,7 +306,7 @@ CADASTRE_COUNTIES = {
         'source': '桃園市政府都市發展局 公開圖服務',
     },
     '新竹市': {
-        'service': 'arcgis', 'wkid': 102443,
+        'service': 'arcgis', 'wkid': 102443, 'cors': True,
         'url': ('https://urbanmap.hccg.gov.tw/server/rest/services'
                 '/Land/Land/MapServer/0/query'),
         'sect': ['SECNAME'], 'sectcode': ['SECT'], 'landno': ['LAND_NO'],
@@ -303,7 +314,7 @@ CADASTRE_COUNTIES = {
         'source': '新竹市政府都市發展處 公開圖服務',
     },
     '新竹縣': {
-        'service': 'arcgis', 'wkid': 102100,
+        'service': 'arcgis', 'wkid': 102100, 'cors': True,
         'url': ('https://imap.hchg.gov.tw/arcgis/rest/services'
                 '/Tiled3857/Land3857/MapServer/1/query'),
         'sect': ['KCNT'], 'sectcode': ['AA48'], 'landno8': ['AA49'],

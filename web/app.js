@@ -59,12 +59,48 @@
     hintTimer = setTimeout(function () { h.hidden = true; }, ms || 2600);
   }
 
-  function proxy(u) { return '/proxy?u=' + encodeURIComponent(u); }
+  // ── 執行模式 ────────────────────────────────────────────
+  //
+  // 本機完整版有 Python 後端，查詢走 /api/*，功能最齊。
+  // 放到 GitHub Pages 之後沒有後端，就改由瀏覽器直接打各縣市服務
+  // （只有會送 CORS 標頭的縣市能用，非都市分區則完全不支援）。
+  // 這裡先探一次 /api/data 決定走哪一邊。
+
+  var hasBackend = null;          // null = 還沒判定
+  var backendReady = fetch('/api/data', { cache: 'no-store' })
+    .then(function (r) { hasBackend = r.ok; })
+    .catch(function () { hasBackend = false; })
+    .then(function () {
+      document.body.classList.toggle('no-backend', !hasBackend);
+      renderModeNote();
+      return hasBackend;
+    });
+
+  function renderModeNote() {
+    var box = document.getElementById('mode-note');
+    if (!box) return;
+    if (hasBackend) {
+      box.textContent = '完整版：所有查詢功能可用，含全國 18 縣市的非都市土地使用分區與編定。';
+      box.className = 'fineprint';
+      return;
+    }
+    var c = (window.Serverless ? Serverless.counties() : { cadastre: [], urban: [] });
+    box.textContent = '線上版（無後端）：地號查詢支援 ' + c.cadastre.join('、')
+      + '；都市計畫分區支援 ' + c.urban.join('、')
+      + '。非都市土地使用分區與編定需要後端解析圖資，線上版無法提供 —— '
+      + '要查那些請下載本機完整版。';
+    box.className = 'fineprint warn-note';
+  }
+
+  // 沒有後端時，本來走 /proxy 的請求改成直連（那些服務都送 CORS 標頭）
+  function proxy(u) { return hasBackend === false ? u : '/proxy?u=' + encodeURIComponent(u); }
 
   function fetchText(u) {
-    return fetch(proxy(u)).then(function (r) {
-      if (!r.ok) throw new Error('HTTP ' + r.status);
-      return r.text();
+    return backendReady.then(function () {
+      return fetch(proxy(u)).then(function (r) {
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return r.text();
+      });
     });
   }
 
@@ -399,6 +435,14 @@
     if (coverageLoaded) return;
     coverageLoaded = true;
     var host = $('#coverage');
+    if (hasBackend === false) {
+      host.textContent = '';
+      var c = Serverless.counties();
+      host.appendChild(el('p', 'empty',
+        '線上版：地號 ' + c.cadastre.join('、') + '；都市計畫 ' + c.urban.join('、')
+        + '。非都市土地使用分區與編定請用本機完整版。'));
+      return;
+    }
     fetch('/api/data').then(function (r) { return r.json(); }).then(function (d) {
       host.textContent = '';
       (d.datasets || []).forEach(function (ds) {
@@ -561,11 +605,15 @@
 
     var b = map.getBounds();
     var seq = ++parcelSeq;
-    var url = '/api/parcels?county=' + encodeURIComponent(county) + '&bbox='
-      + [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()]
-        .map(function (v) { return v.toFixed(6); }).join(',');
-
-    fetch(url).then(function (r) { return r.json(); }).then(function (d) {
+    backendReady.then(function () {
+      if (hasBackend) {
+        var url = '/api/parcels?county=' + encodeURIComponent(county) + '&bbox='
+          + [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()]
+            .map(function (v) { return v.toFixed(6); }).join(',');
+        return fetch(url).then(function (r) { return r.json(); });
+      }
+      return Serverless.parcels(county, b.getWest(), b.getSouth(), b.getEast(), b.getNorth());
+    }).then(function (d) {
       if (seq !== parcelSeq || !showLandNo) return;
       parcelGroup.clearLayers();
       if (d.status !== 'ok') {
@@ -692,10 +740,13 @@
     host.textContent = '';
     host.appendChild(el('p', 'empty', '查詢中…'));
 
-    fetch('/api/cadastre?lat=' + ll.lat.toFixed(7) + '&lon=' + ll.lng.toFixed(7)
-      + '&county=' + encodeURIComponent(county || '')
-      + '&sect=' + encodeURIComponent(sectHint || ''))
-      .then(function (r) { return r.json(); })
+    backendReady.then(function () {
+      return hasBackend
+        ? fetch('/api/cadastre?lat=' + ll.lat.toFixed(7) + '&lon=' + ll.lng.toFixed(7)
+            + '&county=' + encodeURIComponent(county || '')
+            + '&sect=' + encodeURIComponent(sectHint || '')).then(function (r) { return r.json(); })
+        : Serverless.cadastre(ll.lat, ll.lng, county, sectHint);
+    })
       .then(function (d) {
         if (seq !== cadSeq) return;
         host.textContent = '';
@@ -764,10 +815,12 @@
     host.textContent = '';
     host.appendChild(el('p', 'empty', '查詢中…'));
 
-    var u = '/api/zoning?lat=' + ll.lat.toFixed(7) + '&lon=' + ll.lng.toFixed(7)
-      + '&county=' + encodeURIComponent(county || '');
-
-    fetch(u).then(function (r) { return r.json(); }).then(function (d) {
+    backendReady.then(function () {
+      return hasBackend
+        ? fetch('/api/zoning?lat=' + ll.lat.toFixed(7) + '&lon=' + ll.lng.toFixed(7)
+            + '&county=' + encodeURIComponent(county || '')).then(function (r) { return r.json(); })
+        : Serverless.zoning(ll.lat, ll.lng, county);
+    }).then(function (d) {
       if (seq !== zoningSeq) return;
       host.textContent = '';
       // 有答案的排前面；「這個縣市沒有這份資料」之類的收到最後，免得洗版

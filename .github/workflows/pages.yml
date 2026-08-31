@@ -1,0 +1,49 @@
+name: Deploy to GitHub Pages
+
+# 把 web/ 發佈成靜態網站。靜態版沒有 Python 後端，
+# 地籍與都市計畫查詢由瀏覽器直接打各縣市服務（只有送 CORS 標頭的縣市能用），
+# 非都市土地使用分區與編定需要後端解析 shapefile，靜態版不提供。
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      # services.js 由 datasets.py 產生，確保發佈的版本跟登錄表一致
+      - name: 產生前端服務設定
+        run: python build_static.py
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: web
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
