@@ -8,6 +8,8 @@ data/
 # 執行期產生的檔案
 .server.pid
 目前網址.txt
+公開網址.txt
+cf.log
 
 # Python
 __pycache__/

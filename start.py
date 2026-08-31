@@ -89,6 +89,34 @@ def _cache_put(key, body, ctype):
             _cache.popitem(last=False)
 
 
+# ── 簡易速率限制 ──────────────────────────────────────────────
+#
+# 服務放到公網之後，比較怕的是有人猛打 /api/data/fetch（一次觸發幾十 MB 下載）
+# 或狂查各縣市的圖服務 —— 那些請求都是從這台機器的 IP 發出去的，
+# 打太兇可能害自己被對方擋掉。這裡按來源 IP 做很粗的節流。
+
+_rate = {}
+_rate_lock = threading.Lock()
+
+
+def rate_ok(ip, bucket, limit, window):
+    """同一個 IP 在 window 秒內最多 limit 次。超過回 False。"""
+    now = time.time()
+    key = (ip, bucket)
+    with _rate_lock:
+        hits = [t for t in _rate.get(key, ()) if now - t < window]
+        if len(hits) >= limit:
+            _rate[key] = hits
+            return False
+        hits.append(now)
+        _rate[key] = hits
+        if len(_rate) > 5000:            # 別讓字典無限長大
+            cutoff = now - 3600
+            for k in [k for k, v in _rate.items() if not v or v[-1] < cutoff]:
+                _rate.pop(k, None)
+    return True
+
+
 def host_allowed(host):
     host = (host or "").lower().split(":")[0]
     return any(host == s.lstrip(".") or host.endswith(s) for s in ALLOWED_HOST_SUFFIXES)
@@ -584,6 +612,8 @@ class Handler(SimpleHTTPRequestHandler):
         parsed = urllib.parse.urlsplit(self.path)
         if parsed.path == "/proxy":
             return self.handle_proxy(parsed)
+        if parsed.path.startswith("/api/") and not rate_ok(self.client_ip(), "api", 240, 60):
+            return self.fail(429, "請求太頻繁，請稍後再試")
         if parsed.path == "/api/zoning":
             return self.handle_zoning(parsed)
         if parsed.path == "/api/cadastre":
@@ -637,7 +667,16 @@ class Handler(SimpleHTTPRequestHandler):
         except Exception as e:
             return self.fail(500, "查詢失敗：%r" % (e,))
 
+    def client_ip(self):
+        # 經過 Cloudflare Tunnel 時真實來源在這個標頭裡
+        return (self.headers.get("CF-Connecting-IP")
+                or self.headers.get("X-Forwarded-For", "").split(",")[0].strip()
+                or self.client_address[0])
+
     def handle_fetch(self, parsed):
+        # 下載很貴，同一個 IP 每 10 分鐘最多 6 次
+        if not rate_ok(self.client_ip(), "fetch", 6, 600):
+            return self.fail(429, "下載請求太頻繁，請稍後再試")
         q = urllib.parse.parse_qs(parsed.query)
         key = (q.get("key") or [""])[0]
         county = norm_county((q.get("county") or [""])[0])
