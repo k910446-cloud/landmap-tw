@@ -189,7 +189,7 @@
     }, opts || {}));
   }
 
-  // 圖層可以自帶出處與最大原生層級（歷史圖資、OSM 系列跟國土測繪中心不同）
+  // 圖層可以自帶出處與最大原生層級（OSM 系列跟國土測繪中心不同）
   function tileOpts(def, extra) {
     var o = Object.assign({}, extra || {});
     if (def.attr) o.attribution = def.attr;

@@ -27,18 +27,6 @@
     { id: 'BLANK',     name: '空白（只看疊圖）',   url: null }
   ];
 
-  // 中央研究院人社中心 GIS 專題中心「臺灣百年歷史地圖」
-  // 圖磚格式：/tileserver/file-exists.php?img={圖層}-png-{z}-{x}-{y}
-  var SINICA = 'https://gis.sinica.edu.tw/tileserver/file-exists.php?img={L}-png-{z}-{x}-{y}';
-  var SINICA_ATTR = '歷史圖資 © <a href="https://gis.sinica.edu.tw/" target="_blank" rel="noopener">中研院人社中心 GIS 專題中心</a>';
-  function hist(id, name, note) {
-    return {
-      group: '歷史圖資', id: 'SINICA_' + id, name: name,
-      url: SINICA.replace('{L}', id), opacity: 0.8, on: false,
-      maxNativeZoom: 17, attr: SINICA_ATTR, note: note
-    };
-  }
-
   /* sample:true  = 可在「點位查詢」時抓取該圖層在點擊處的顏色。
    * legend:[...] = 官方圖例的主要色塊，供比對參考。
    */
@@ -177,15 +165,7 @@
     { group: '環境敏感', id: 'MOI_SLOPEP_GT30_2', name: '坡度 30% 以上',      url: url('MOI_SLOPEP_GT30_2'), opacity: 0.6, on: false },
     { group: '環境敏感', id: 'SoilLiquefaction2', name: '土壤液化潛勢（中級）', url: url('SoilLiquefaction2'), opacity: 0.6, on: false, sample: true },
     { group: '環境敏感', id: 'GeoSensitive',      name: '地質敏感區',         url: url('GeoSensitive'),      opacity: 0.6, on: false },
-    { group: '環境敏感', id: 'GeoSensitive2',     name: '地質敏感區（山崩與地滑）', url: url('GeoSensitive2'), opacity: 0.6, on: false },
-
-    hist('JM25K_1921', '日治二萬五千分之一地形圖（1921）', '可與現況比對舊河道、聚落範圍與土地變遷。'),
-    hist('AM25K_1944A', '美軍地形圖（1944）'),
-    hist('AM25K_1944B', '美軍航照圖（1944）'),
-    hist('JM20K_1904', '日治臺灣堡圖 明治版（1904）'),
-    hist('JM20K_1921', '日治臺灣堡圖 大正版（1921）'),
-    hist('JM25K_1942', '日治二萬五千分之一地形圖 昭和修正版（1942）'),
-    hist('JM100K_1905', '日治十萬分一臺灣圖（1905）')
+    { group: '環境敏感', id: 'GeoSensitive2',     name: '地質敏感區（山崩與地滑）', url: url('GeoSensitive2'), opacity: 0.6, on: false }
   ];
 
   /* 非都市土地使用分區 / 使用地類別的法定名目。
