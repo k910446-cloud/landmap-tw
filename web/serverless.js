@@ -157,7 +157,8 @@
       var rings = (f.geometry || {}).rings;
       var out = {
         status: 'ok', county: county,
-        source: (cfg.source || '') + '（瀏覽器直連）',
+        source: (cfg.source || '')
+          + (cfg.needsProxy ? '（經自備代理）' : '（瀏覽器直連）'),
         sect: pick(attrs, cfg.sect || [], true) || sectHint || null,
         sectCode: pick(attrs, cfg.sectcode || [], true),
         landNo: formatLandNo(cfg, attrs),
@@ -229,7 +230,8 @@
     var cfg = (SERVICES.urban || {})[county];
     var urbanItem = {
       key: 'urban_zone', title: '都市計畫使用分區',
-      source: '各直轄市／縣市政府 公開圖服務（瀏覽器直連）',
+      source: '各直轄市／縣市政府 公開圖服務'
+        + (((SERVICES.urban || {})[county] || {}).needsProxy ? '（經自備代理）' : '（瀏覽器直連）'),
       sourceUrl: 'https://data.gov.tw/dataset/156197',
       licence: '各該市政府開放資料授權'
     };
