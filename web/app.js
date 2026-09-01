@@ -900,6 +900,7 @@
 
         renderEdgeList(host);
         if (d.source) host.appendChild(el('div', 'fineprint', d.source));
+        if (d.sect) renderPrices(host, county, d.sect, d.landNo);
       })
       .catch(function (e) {
         if (seq !== cadSeq) return;
@@ -1538,6 +1539,105 @@
     hint('已開啟地籍圖資網路便民服務系統');
   });
 
+
+
+  // ── 成交行情 ────────────────────────────────────────────
+  //
+  // 實價登錄的土地明細帶「段名 ＋ 八碼地號」，跟地籍圖的鍵一致，
+  // 所以查到宗地之後可以直接把成交紀錄掛上來（見 prices.js）。
+
+  var priceSeq = 0;
+
+  function renderPrices(host, county, sect, landNo) {
+    var seq = ++priceSeq;
+    var box = el('div', 'pricebox');
+    box.appendChild(el('div', 'pricehead', '成交行情'));
+    var body = el('div', 'pricebody');
+    body.appendChild(el('p', 'fineprint', '查詢中…'));
+    box.appendChild(body);
+    host.appendChild(box);
+
+    Prices.query(county, sect, landNo).then(function (d) {
+      if (seq !== priceSeq) return;
+      body.textContent = '';
+
+      if (d.status !== 'ok') {
+        body.appendChild(el('p', 'fineprint', d.message || '沒有可顯示的成交資料'));
+        return;
+      }
+
+      if (d.own.length) {
+        // 大樓的基地一筆地號可能上百筆成交，全部攤開會蓋掉後面的資訊，
+        // 先給最近 8 筆，其餘收起來
+        var SHOW = 8;
+        body.appendChild(el('div', 'pricesub',
+          '這筆地號的成交紀錄（' + d.own.length + ' 筆）'));
+        var list = el('div', 'pricelist');
+        d.own.slice(0, SHOW).forEach(function (t) { list.appendChild(dealRow(t)); });
+        body.appendChild(list);
+        if (d.own.length > SHOW) {
+          var more = el('details', 'pricemore');
+          more.appendChild(el('summary', null,
+            '看其餘 ' + (d.own.length - SHOW) + ' 筆'));
+          var rest = el('div', 'pricelist');
+          d.own.slice(SHOW).forEach(function (t) { rest.appendChild(dealRow(t)); });
+          more.appendChild(rest);
+          body.appendChild(more);
+        }
+      } else {
+        body.appendChild(el('p', 'fineprint',
+          '這筆地號在最近 ' + d.seasons.length + ' 季沒有成交紀錄。'));
+      }
+
+      if (d.medianPerPing) {
+        var sum = el('div', 'pricestat');
+        sum.appendChild(el('b', null, d.sect + ' 中位數'));
+        sum.appendChild(document.createTextNode(
+          ' ' + wan(d.medianPerPing) + ' 萬/坪　（' + d.sectionCount + ' 筆成交、'
+          + d.sectionParcels + ' 筆地號）'));
+        body.appendChild(sum);
+        body.appendChild(el('p', 'fineprint',
+          '用中位數而不是平均 —— 一兩筆特別高或特別低的成交（親友間交易、'
+          + '含車位或裝潢）會把平均值拉走。'));
+      }
+
+      if (d.recent && d.recent.length) {
+        var det = el('details', 'pricemore');
+        det.appendChild(el('summary', null, '同段最近的成交（' + d.recent.length + ' 筆）'));
+        var l2 = el('div', 'pricelist');
+        d.recent.forEach(function (t) { l2.appendChild(dealRow(t)); });
+        det.appendChild(l2);
+        body.appendChild(det);
+      }
+
+      body.appendChild(el('p', 'fineprint',
+        d.source + '　季別 ' + d.seasons.join('、')
+        + '。單價由政府欄位的每平方公尺換算為每坪，未自行推算。'
+        + '成交價受屋齡、樓層、車位、裝潢與交易條件影響很大，僅供參考。'));
+    }).catch(function (e) {
+      if (seq !== priceSeq) return;
+      body.textContent = '';
+      body.appendChild(el('p', 'fineprint', '讀取成交資料失敗：' + (e.message || e)));
+    });
+  }
+
+  function wan(perPing) {
+    return (perPing / 10000).toFixed(1);
+  }
+
+  function dealRow(t) {
+    var row = el('div', 'dealrow');
+    row.appendChild(el('span', 'dealdate', t.ymText));
+    row.appendChild(el('span', 'dealkind', t.kind));
+    row.appendChild(el('b', 'dealprice', t.totalWan + ' 萬'));
+    if (t.unitPerPing) {
+      row.appendChild(el('span', 'dealunit', wan(t.unitPerPing) + ' 萬/坪'));
+    }
+    if (t.areaPing) {
+      row.appendChild(el('span', 'dealarea', t.areaPing + ' 坪'));
+    }
+    return row;
+  }
 
   // ── 依地號定位 ──────────────────────────────────────────
   //

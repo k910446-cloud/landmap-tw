@@ -25,3 +25,6 @@ venv/
 Thumbs.db
 desktop.ini
 .DS_Store
+
+# 實價登錄原始壓縮檔（每季約 15 MB，build_prices.py 會自己抓）
+data/lvr/

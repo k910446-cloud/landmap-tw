@@ -302,3 +302,20 @@ dd{margin:0;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
   text-decoration:none}
 .lawdisc{font-size:11px;color:var(--ink-3);line-height:1.5;margin:8px 0 0}
 .edgeparts{font-style:normal;font-size:10.5px;color:var(--ink-3);margin-left:5px}
+
+/* 成交行情 */
+.pricebox{margin-top:10px;padding-top:9px;border-top:1px dashed var(--line)}
+.pricehead{font-size:13px;font-weight:700;color:var(--ink)}
+.pricesub{font-size:12px;color:var(--ink-2);margin:8px 0 4px}
+.pricelist{display:flex;flex-direction:column;gap:4px}
+.dealrow{display:flex;flex-wrap:wrap;gap:6px;align-items:baseline;
+  font-size:12px;padding:5px 8px;border:1px solid var(--line);border-radius:7px;background:var(--bg)}
+.dealdate{color:var(--ink-3)}
+.dealkind{font-size:11px;color:var(--ink-3);border:1px solid var(--line);border-radius:5px;padding:1px 5px}
+.dealprice{color:var(--brand-2)}
+.dealunit{color:var(--ink-2)}
+.dealarea{color:var(--ink-3)}
+.pricestat{margin-top:9px;font-size:12.5px;color:var(--ink)}
+.pricemore{margin-top:8px;border:1px solid var(--line);border-radius:8px;background:var(--bg)}
+.pricemore>summary{cursor:pointer;padding:6px 10px;font-size:12.5px;color:var(--ink-2)}
+.pricemore .pricelist{padding:0 8px 8px}
