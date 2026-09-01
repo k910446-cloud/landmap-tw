@@ -295,10 +295,47 @@
       if (groups.indexOf(o.group) < 0) groups.push(o.group);
     });
 
+    /* 每個群組收成一個可展開的區塊。
+     *
+     * 38 個疊圖層全部攤開的話，「圖層」頁要滑很久才找得到東西。
+     * 收起來之後一眼看得到有哪幾類，要用哪一類再點開。
+     * 展開狀態會記住，並在群組裡有圖層開著時自動展開 ——
+     * 不然使用者會找不到自己開了什麼。
+     */
+    var openGroups = store.get('openGroups', {});
+
     groups.forEach(function (gname) {
       var card = el('div', 'card');
-      card.appendChild(el('h3', null, gname));
-      CATALOG.overlays.filter(function (o) { return o.group === gname; }).forEach(function (o) {
+      var box = el('details', 'lyr-group');
+      var sum = el('summary');
+      sum.appendChild(el('span', 'lyr-gname', gname));
+
+      var inGroup = CATALOG.overlays.filter(function (o) { return o.group === gname; });
+      var onCount = inGroup.filter(function (o) {
+        return state.overlays[o.id] && state.overlays[o.id].on;
+      }).length;
+
+      var badge = el('span', 'lyr-count');
+      function refreshBadge() {
+        var n = inGroup.filter(function (o) {
+          return state.overlays[o.id] && state.overlays[o.id].on;
+        }).length;
+        badge.textContent = n ? (n + ' / ' + inGroup.length) : String(inGroup.length);
+        badge.classList.toggle('is-on', n > 0);
+      }
+      refreshBadge();
+      sum.appendChild(badge);
+      box.appendChild(sum);
+
+      // 有圖層開著就自動展開，否則照使用者上次的選擇
+      box.open = onCount > 0 || !!openGroups[gname];
+      box.addEventListener('toggle', function () {
+        openGroups[gname] = box.open;
+        store.set('openGroups', openGroups);
+      });
+
+      card.appendChild(box);
+      inGroup.forEach(function (o) {
         var st = state.overlays[o.id];
         var row = el('div', 'lyr');
         var head = el('div', 'lyr-head');
@@ -330,6 +367,7 @@
           st.on = cb.checked;
           if (cb.checked) st.layer.addTo(map); else map.removeLayer(st.layer);
           saveOverlays();
+          refreshBadge();
           if (state.latlng) runSamples(state.latlng);
         });
         rg.addEventListener('input', function () {
@@ -339,7 +377,7 @@
         });
         rg.addEventListener('change', saveOverlays);
 
-        card.appendChild(row);
+        box.appendChild(row);
       });
       host.appendChild(card);
     });

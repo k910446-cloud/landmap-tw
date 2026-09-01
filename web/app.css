@@ -354,3 +354,14 @@ button.projname:active{transform:translateY(1px)}
 .uselist{display:flex;flex-wrap:wrap;gap:5px;margin:7px 0}
 .useitem{font-size:11.5px;line-height:1.6;color:var(--ink);background:var(--bg);
   border:1px solid var(--line);border-radius:6px;padding:3px 8px}
+
+/* 圖層群組（可收合） */
+.lyr-group>summary{cursor:pointer;list-style:none;display:flex;align-items:center;
+  gap:8px;padding:2px 0 6px;font-size:15px;font-weight:700;color:var(--ink)}
+.lyr-group>summary::-webkit-details-marker{display:none}
+.lyr-group>summary::before{content:"▸";color:var(--ink-3);font-size:12px;width:12px}
+.lyr-group[open]>summary::before{content:"▾"}
+.lyr-gname{flex:1}
+.lyr-count{font-size:11px;font-weight:600;color:var(--ink-3);border:1px solid var(--line);
+  border-radius:10px;padding:1px 8px}
+.lyr-count.is-on{color:#fff;background:var(--brand-2);border-color:var(--brand-2)}
