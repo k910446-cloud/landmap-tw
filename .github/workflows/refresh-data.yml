@@ -1,0 +1,132 @@
+name: 更新資料
+
+# 這個 App 的每一份資料都是某個時間點的快照：法規會修正、實價登錄每季發佈。
+# 沒有人盯著的話它會安靜地變成過期資料 —— 畫面照樣好好的，數字卻是舊的。
+#
+# 所以排程自動檢查、有變動才重建並提交。沒變動就什麼都不做：
+# 不跑重建、不存快取、不製造空提交。
+
+on:
+  schedule:
+    # 每月 5 日 02:00 UTC（臺灣早上 10 點）。實價登錄大約在季末後
+    # 一個半月發佈，每月檢查一次就一定接得到。
+    - cron: '0 2 5 * *'
+  workflow_dispatch:
+    inputs:
+      force:
+        description: '即使沒偵測到變動也強制重建'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: refresh-data
+  cancel-in-progress: false
+
+jobs:
+  laws:
+    name: 法規與附表一
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      # check_updates.py 的結束碼：0 都最新、1 該更新、2 檢查本身失敗。
+      # 不用管線接 tee —— 那樣拿到的會是 tee 的結束碼，永遠是 0。
+      - name: 檢查法規有沒有修正
+        id: check
+        run: |
+          set +e
+          python check_updates.py --laws
+          code=$?
+          set -e
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+          if [ "$code" = "2" ]; then
+            echo "::warning::檢查失敗（多半是連不上法規資料庫），這次不重建"
+          fi
+
+      - name: 重建法規與附表一
+        if: steps.check.outputs.code == '1' || inputs.force
+        run: |
+          python build_laws.py
+          python build_landuse.py
+
+      - name: 測試
+        if: steps.check.outputs.code == '1' || inputs.force
+        run: python -m unittest discover -s tests
+
+      - name: 有變動才提交
+        if: steps.check.outputs.code == '1' || inputs.force
+        run: |
+          if git diff --quiet -- web/laws.js web/landuse.js; then
+            echo "重建後內容相同，不提交"
+            exit 0
+          fi
+          git config user.name  'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add web/laws.js web/landuse.js
+          git commit -m '自動更新：法規條文與附表一容許使用項目' -m '由 refresh-data 排程重建。條文與數字皆取自全國法規資料庫，每一部法規都會核對標題與修正日期，對不上就不輸出。'
+          git push
+
+  prices:
+    name: 實價登錄
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      # 原始壓縮檔十年份約 500 MB，每次重抓太浪費，對政府主機也不禮貌。
+      # 用 restore/save 分開寫，沒有新資料時就不重存那 500 MB。
+      - name: 取回原始檔快取
+        id: cache
+        uses: actions/cache/restore@v4
+        with:
+          path: data/lvr
+          key: lvr-seasons
+          restore-keys: lvr-
+
+      - name: 檢查有沒有新的季別
+        id: check
+        run: |
+          set +e
+          python check_updates.py --prices
+          code=$?
+          set -e
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+          if [ "$code" = "2" ]; then
+            echo "::warning::檢查失敗（多半是連不上實價登錄），這次不重建"
+          fi
+
+      - name: 下載新季別並重建
+        if: steps.check.outputs.code == '1' || inputs.force
+        run: python build_prices.py
+
+      - name: 測試（重建後編碼要仍然正確）
+        if: steps.check.outputs.code == '1' || inputs.force
+        run: python -m unittest discover -s tests
+
+      - name: 更新原始檔快取
+        if: steps.check.outputs.code == '1' || inputs.force
+        uses: actions/cache/save@v4
+        with:
+          path: data/lvr
+          key: lvr-seasons-${{ github.run_id }}
+
+      - name: 有變動才提交
+        if: steps.check.outputs.code == '1' || inputs.force
+        run: |
+          if git diff --quiet -- web/prices; then
+            echo "重建後內容相同，不提交"
+            exit 0
+          fi
+          git config user.name  'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add web/prices
+          git commit -m '自動更新：實價登錄成交資料' -m '由 refresh-data 排程重建，收錄至最新已發佈的季別。'
+          git push

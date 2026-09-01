@@ -350,11 +350,22 @@ landmap-tw/
 ├─ start.py                 本機伺服器：靜態檔案、/proxy 代理、圖徵查詢 API
 ├─ geo.py                   純 stdlib 的 Shapefile 解析與點在多邊形內判斷
 ├─ datasets.py              開放資料集登錄表 ← 要加圖徵圖層改這裡
-├─ data/                    下載的縣市圖資（自動建立）
+├─ pdftext.py               純 stdlib 的 PDF 文字抽取（附表一只有 PDF）
+├─ build_static.py          由 datasets.py 產生 web/services.js
+├─ build_layers.py          把非都市與部分都市計畫圖資轉成線上版查得動的格式
+├─ fetch_layers.py          下載上述圖資
+├─ build_laws.py            從全國法規資料庫產生 web/laws.js
+├─ build_landuse.py         從管制規則附表一產生 web/landuse.js
+├─ build_prices.py          從實價登錄產生 web/prices/
+├─ check_updates.py         比對收錄版本與上游最新版本，回報該不該更新
+├─ tests/                   核心計算的單元測試
+├─ data/                    下載的縣市圖資與實價登錄原始檔（自動建立）
 ├─ 啟動.bat                 Windows 一鍵啟動（有視窗）
 ├─ 手機模式（含定位）.bat    開放區網 + https，手機可用 GPS
 ├─ 背景啟動.vbs             背景啟動、無視窗（開機自動執行的就是這個）
 ├─ 停止伺服器.bat           讀 .server.pid 停掉伺服器
+├─ 執行測試.bat             跑核心計算的單元測試
+├─ 檢查資料是否過期.bat      比對收錄版本與上游最新版本
 ├─ stop.py                  停止邏輯
 ├─ 目前網址.txt             每次啟動自動寫入當下網址
 ├─ certs/                   自簽憑證（--https 時自動產生）
@@ -376,6 +387,26 @@ landmap-tw/
 它存在的理由有三個：讓 canvas 能取樣圖磚顏色（需要 CORS 標頭）、
 在本機快取圖磚減少對政府主機的請求、以及繞過 Python 3.13 對部分政府憑證的
 嚴格檢查（僅關閉 `VERIFY_X509_STRICT` 這項附加檢查，憑證鏈與主機名稱仍完整驗證）。
+
+---
+
+## 資料更新與測試
+
+每一份資料都是某個時間點的快照：法規會修正、實價登錄每季發佈、政府圖資每年換版。
+沒有人盯著的話它會安靜地變成過期資料 —— 畫面照樣好好的，數字卻是舊的。
+
+**自動更新**：`.github/workflows/refresh-data.yml` 每月檢查一次，
+有變動才重建並提交，沒變動就什麼都不做。實價登錄的原始檔會快取，
+只有新的一季需要下載。也可以到 Actions 頁面手動觸發。
+
+**自己檢查**：跑 `檢查資料是否過期.bat`（或 `python check_updates.py`），
+它會比對目前收錄的法規修正日期與季別，跟上游現在的版本。
+
+**測試**：跑 `執行測試.bat`（或 `python -m unittest discover -s tests`）。
+測的都是純函式 —— 座標換算、面積、地號補零、varint 編解碼、法條數字解析。
+這個專案最怕的不是當掉，是安靜地算錯：面積少一位數、地號補零補錯、
+座標偏幾百公尺，畫面上都長得很正常。實際上也發生過（「持分移轉」曾被
+當成特殊交易排除，把幾乎所有住宅成交都濾掉），所以這些測試不是形式。
 
 ---
 
