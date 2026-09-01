@@ -24,6 +24,7 @@ import json
 import math
 import mimetypes
 import os
+import re
 import socket
 import ssl
 import sys
@@ -432,6 +433,104 @@ def query_cadastre(lat, lon, county, sect_hint=None):
     return out
 
 
+def find_parcel(county, sect, land_no):
+    """依「段名或段碼 + 地號」找宗地，回傳幾何供前端定位。
+
+    各縣市欄位名稱不同，但存的格式一致：段碼 4 碼、地號 8 碼
+    （母號 4 ＋ 子號 4）。有些縣市拆成 mother/child 兩欄；桃園只有段碼
+    沒有段名，用段名就查不到 —— 那種情況直接說明，不要讓使用者對著
+    空結果猜。
+    """
+    county = norm_county(county)
+    cfg = DS.cadastre(county)
+    if not cfg:
+        return {"status": "unavailable", "county": county,
+                "message": "尚未登錄 %s 的公開地籍圖服務" % (county or "此縣市")}
+
+    m = re.match(r"^(\d{1,4})\s*(?:[-－之]\s*(\d{1,4}))?$", (land_no or "").strip())
+    if not m:
+        return {"status": "bad-input",
+                "message": "地號請填數字，子號用連字號，例如 880 或 880-1"}
+    mother, child = m.group(1), m.group(2) or "0"
+
+    # 這些值會進到 where 條件，只留中文、英數與連字號
+    sect_txt = re.sub(r"[^一-龥A-Za-z0-9\-]", "", (sect or "").strip())
+    if not sect_txt:
+        return {"status": "bad-input", "message": "請指定段名或四碼段代碼"}
+
+    def first(key):
+        v = cfg.get(key) or []
+        return v[0] if v else None
+
+    conds = []
+    if re.match(r"^\d{1,4}$", sect_txt):
+        f = first("sectcode")
+        if not f:
+            return {"status": "unsupported", "message": "這個縣市的圖層沒有段代碼欄位"}
+        conds.append("%s = '%s'" % (f, sect_txt.zfill(4)))
+    else:
+        f = first("sect")
+        if not f:
+            return {"status": "unsupported",
+                    "message": "這個縣市的圖層沒有段名欄位，請改用四碼段代碼查詢"}
+        conds.append("%s = '%s'" % (f, sect_txt))
+
+    eight, mf, cf, lf = first("landno8"), first("mother"), first("child"), first("landno")
+    if eight:
+        conds.append("%s = '%s'" % (eight, mother.zfill(4) + child.zfill(4)))
+    elif mf and cf:
+        conds.append("%s = '%s'" % (mf, mother.zfill(4)))
+        conds.append("%s = '%s'" % (cf, child.zfill(4)))
+    elif lf:
+        human = str(int(mother)) + ("-%d" % int(child) if int(child) else "")
+        conds.append("%s = '%s'" % (lf, human))
+    else:
+        return {"status": "unsupported", "message": "這個縣市的圖層沒有地號欄位"}
+
+    params = {
+        "f": "json", "where": " AND ".join(conds), "outFields": "*",
+        "returnGeometry": "true", "outSR": "4326",
+    }
+    url = cfg["url"] + "?" + urllib.parse.urlencode(params)
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": UA})
+        with urllib.request.urlopen(req, timeout=25, context=_SSL_CTX) as r:
+            data = json.loads(r.read().decode("utf-8", "replace"))
+        if data.get("error"):
+            raise RuntimeError(data["error"].get("message", "服務回應錯誤"))
+    except Exception as e:
+        return {"status": "error", "county": county,
+                "message": "%s 的地籍服務目前無法使用：%s" % (county, e)}
+
+    feats = data.get("features") or []
+    if not feats:
+        return {"status": "not-found", "county": county,
+                "message": "在 %s %s 找不到 %s 地號" % (county, sect_txt, land_no)}
+
+    f0 = feats[0]
+    attrs = f0.get("attributes") or {}
+    rings = (f0.get("geometry") or {}).get("rings") or []
+    out = {
+        "status": "ok", "county": county, "matches": len(feats),
+        "sect": pick_value(attrs, cfg.get("sect") or [], exact=True) or sect_txt,
+        "sectCode": pick_value(attrs, cfg.get("sectcode") or [], exact=True),
+        "landNo": format_landno(cfg, attrs),
+        "town": pick_value(attrs, cfg.get("town") or [], exact=True),
+        "rings": [[[p[1], p[0]] for p in ring] for ring in rings],
+    }
+    a = None
+    try:
+        a = float(pick_value(attrs, cfg.get("area") or [], exact=True))
+    except (TypeError, ValueError):
+        a = None
+    if (a is None or a <= 0) and rings:
+        a = ring_area_m2(rings[0])
+    if a and a > 0:
+        out["areaM2"] = round(a, 2)
+        out["areaPing"] = round(a / PING, 2)
+    return out
+
+
 def query_parcels(county, xmin, ymin, xmax, ymax, limit=1200):
     """把一個矩形範圍內的宗地全部撈出來，給前端在圖上標地號。
 
@@ -620,6 +719,8 @@ class Handler(SimpleHTTPRequestHandler):
             return self.handle_cadastre(parsed)
         if parsed.path == "/api/parcels":
             return self.handle_parcels(parsed)
+        if parsed.path == "/api/parcel-find":
+            return self.handle_parcel_find(parsed)
         if parsed.path == "/api/data":
             return self.json_ok({"datasets": dataset_status()})
         if parsed.path == "/api/data/fetch":
@@ -664,6 +765,16 @@ class Handler(SimpleHTTPRequestHandler):
         county = (q.get("county") or [""])[0]
         try:
             return self.json_ok(query_parcels(county, *bbox))
+        except Exception as e:
+            return self.fail(500, "查詢失敗：%r" % (e,))
+
+    def handle_parcel_find(self, parsed):
+        q = urllib.parse.parse_qs(parsed.query)
+        county = (q.get("county") or [""])[0]
+        sect = (q.get("sect") or [""])[0]
+        no = (q.get("no") or [""])[0]
+        try:
+            return self.json_ok(find_parcel(county, sect, no))
         except Exception as e:
             return self.fail(500, "查詢失敗：%r" % (e,))
 

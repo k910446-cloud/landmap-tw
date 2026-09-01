@@ -222,6 +222,121 @@
     });
   }
 
+
+  // ── 依段名／段碼 + 地號找宗地 ────────────────────────────
+  //
+  // 各縣市欄位名稱不同，但存的格式一致：段碼 4 碼、地號 8 碼
+  //（母號 4 ＋ 子號 4）。有些縣市另外拆成 mother/child 兩欄，
+  // 桃園則只有段碼沒有段名，所以用段名查不到 —— 那種情況直接說明，
+  // 不要讓使用者對著空結果猜。
+
+  function pad4(n) {
+    n = String(parseInt(n, 10) || 0);
+    while (n.length < 4) n = '0' + n;
+    return n;
+  }
+
+  // 只留中文、英數與連字號 —— 這些值會進到 where 條件，
+  // 單引號跳脫之外再擋一層，避免把奇怪的字串送進政府服務
+  function safeText(t) {
+    return String(t == null ? '' : t)
+      .replace(/[^一-龥A-Za-z0-9\-]/g, '')
+      .replace(/'/g, "''");
+  }
+
+  function firstField(list) {
+    return (list && list.length) ? list[0] : null;
+  }
+
+  // 「880」「880-1」「880之1」→ { mother: 880, child: 1 }
+  function parseLandNo(text) {
+    var m = String(text || '').trim().match(/^(\d{1,4})\s*(?:[-－之]\s*(\d{1,4}))?$/);
+    if (!m) return null;
+    return { mother: m[1], child: m[2] || '0' };
+  }
+
+  function parcelWhere(cfg, sect, no) {
+    var conds = [];
+    var sectTxt = safeText(sect);
+
+    if (/^\d{1,4}$/.test(sectTxt)) {
+      var scf = firstField(cfg.sectcode);
+      if (!scf) return { error: '這個縣市的圖層沒有段代碼欄位' };
+      conds.push(scf + " = '" + pad4(sectTxt) + "'");
+    } else {
+      var snf = firstField(cfg.sect);
+      if (!snf) {
+        return { error: '這個縣市的圖層沒有段名欄位，請改用四碼段代碼查詢' };
+      }
+      conds.push(snf + " = '" + sectTxt + "'");
+    }
+
+    var eight = firstField(cfg.landno8);
+    var mf = firstField(cfg.mother), cf = firstField(cfg.child);
+    var lf = firstField(cfg.landno);
+    if (eight) {
+      conds.push(eight + " = '" + pad4(no.mother) + pad4(no.child) + "'");
+    } else if (mf && cf) {
+      conds.push(mf + " = '" + pad4(no.mother) + "'");
+      conds.push(cf + " = '" + pad4(no.child) + "'");
+    } else if (lf) {
+      var human = String(parseInt(no.mother, 10))
+        + (parseInt(no.child, 10) ? '-' + parseInt(no.child, 10) : '');
+      conds.push(lf + " = '" + human + "'");
+    } else {
+      return { error: '這個縣市的圖層沒有地號欄位' };
+    }
+    return { where: conds.join(' AND ') };
+  }
+
+  function findParcel(county, sect, landNo) {
+    var cfg = (SERVICES.cadastre || {})[county];
+    var stop = guard(cfg, county, '地籍服務');
+    if (stop) return Promise.resolve(stop);
+
+    var no = parseLandNo(landNo);
+    if (!no) {
+      return Promise.resolve({ status: 'bad-input',
+        message: '地號請填數字，子號用連字號，例如 880 或 880-1' });
+    }
+    var w = parcelWhere(cfg, sect, no);
+    if (w.error) return Promise.resolve({ status: 'unsupported', message: w.error });
+
+    return esriQuery(cfg, {
+      f: 'json', where: w.where, outFields: '*',
+      returnGeometry: 'true', outSR: '4326'
+    }).then(function (d) {
+      var feats = d.features || [];
+      if (!feats.length) {
+        return { status: 'not-found', county: county,
+          message: '在 ' + county + ' ' + sect + ' 找不到 ' + landNo + ' 地號' };
+      }
+      var f = feats[0], attrs = f.attributes || {};
+      var rings = (f.geometry || {}).rings || [];
+      var out = {
+        status: 'ok', county: county,
+        sect: pick(attrs, cfg.sect || [], true) || sect,
+        sectCode: pick(attrs, cfg.sectcode || [], true),
+        landNo: formatLandNo(cfg, attrs),
+        town: pick(attrs, cfg.town || [], true),
+        matches: feats.length,
+        rings: rings.map(function (r) {
+          return r.map(function (p) { return [p[1], p[0]]; });
+        })
+      };
+      var a = parseFloat(pick(attrs, cfg.area || [], true));
+      if (isNaN(a) || a <= 0) a = rings.length ? ringAreaM2(rings[0]) : NaN;
+      if (!isNaN(a) && a > 0) {
+        out.areaM2 = Math.round(a * 100) / 100;
+        out.areaPing = Math.round(a / PING * 100) / 100;
+      }
+      return out;
+    }).catch(function (e) {
+      return { status: 'error', county: county,
+        message: county + ' 的地籍服務目前無法使用：' + (e.message || e) };
+    });
+  }
+
   // ── 使用分區 ────────────────────────────────────────────
   function zoning(lat, lon, county) {
     var F = SERVICES.urbanFields || { value: [], code: [], extra: [] };
@@ -304,6 +419,8 @@
   g.Serverless = {
     cadastre: cadastre,
     parcels: parcels,
+    findParcel: findParcel,
+    parseLandNo: parseLandNo,
     zoning: zoning,
     counties: function () {
       return {

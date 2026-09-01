@@ -1394,6 +1394,10 @@
     var dl = $('#sect-info');
     $('#btn-sect-copy').disabled = !s;
     $('#btn-sect-official').disabled = !s;
+    var lin = $('#in-landno'), lbtn = $('#btn-landno-go');
+    if (lin) lin.disabled = !s;
+    if (lbtn) lbtn.disabled = !s;
+    if (!s) { lin.value = ''; $('#landno-msg').textContent = ''; }
     if (!s) { dl.textContent = ''; return; }
     fillDL(dl, [
       ['縣市', s.countyName + '（' + s.countyCode + '）'],
@@ -1424,6 +1428,87 @@
     hint('已開啟地籍圖資網路便民服務系統');
   });
 
+
+  // ── 依地號定位 ──────────────────────────────────────────
+  //
+  // 「段名／段碼 + 地號」→ 直接向縣市地籍服務要那一筆的幾何，
+  // 拉到畫面上並框起來。之所以能用段名查，是因為各縣市的地籍圖層
+  // 大多帶段名欄位（桃園例外，只有段碼）。
+
+  var foundLayer = L.layerGroup();
+  var landnoSeq = 0;
+
+  function clearFoundParcel() {
+    foundLayer.clearLayers();
+    if (map.hasLayer(foundLayer)) map.removeLayer(foundLayer);
+  }
+
+  function findLandNo(county, sect, no, msgEl) {
+    var seq = ++landnoSeq;
+    function say(t) { if (msgEl) msgEl.textContent = t; }
+
+    if (!county) { say('請先選縣市'); hint('請先選縣市'); return; }
+    if (!sect) { say('請先選段，或輸入四碼段代碼'); hint('請先選段'); return; }
+    if (!no) { say('請輸入地號'); return; }
+
+    say('查詢中…');
+    backendReady.then(function () {
+      return hasBackend
+        ? fetch('/api/parcel-find?county=' + encodeURIComponent(county)
+            + '&sect=' + encodeURIComponent(sect)
+            + '&no=' + encodeURIComponent(no)).then(function (r) { return r.json(); })
+        : Serverless.findParcel(county, sect, no);
+    }).then(function (d) {
+      if (seq !== landnoSeq) return;
+      if (d.status !== 'ok') {
+        say(d.message || '查不到');
+        hint(d.message || '查不到這筆地號');
+        return;
+      }
+
+      clearFoundParcel();
+      var bounds = null;
+      (d.rings || []).forEach(function (ring) {
+        var poly = L.polygon(ring, {
+          color: '#e8590c', weight: 3, fillColor: '#ff922b', fillOpacity: 0.25
+        }).addTo(foundLayer);
+        bounds = bounds ? bounds.extend(poly.getBounds()) : poly.getBounds();
+      });
+      foundLayer.addTo(map);
+
+      var label = [d.sect || sect, (d.landNo || no) + '地號'].join(' ');
+      if (bounds) {
+        map.fitBounds(bounds, { maxZoom: 19, padding: [40, 40] });
+        // 順手把這一點也當成查詢點，右邊面板就會帶出分區、法條等資訊
+        setPoint(bounds.getCenter());
+      }
+      var extra = d.areaPing ? ('　' + d.areaM2 + ' m²（約 ' + d.areaPing + ' 坪）') : '';
+      say('已定位：' + label + extra
+        + (d.matches > 1 ? '　（同段同號有 ' + d.matches + ' 筆，顯示第一筆）' : ''));
+      hint('已定位到 ' + label);
+    }).catch(function (e) {
+      if (seq !== landnoSeq) return;
+      say('查詢失敗：' + (e.message || e));
+    });
+  }
+
+  (function wireLandNo() {
+    var input = $('#in-landno');
+    var btn = $('#btn-landno-go');
+    var msg = $('#landno-msg');
+    if (!input || !btn) return;
+
+    function go() {
+      var sel = state.sect.sel;
+      findLandNo(sel && sel.countyName, sel && sel.sectCode,
+        input.value.trim(), msg);
+    }
+    btn.addEventListener('click', go);
+    input.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.keyCode === 13) { e.preventDefault(); go(); this.blur(); }
+    });
+  }());
+
   // ── 搜尋 ────────────────────────────────────────────────
   /* 接受的寫法（順序、標點都不拘）:
    *   25.033, 121.565            WGS84 經緯度
@@ -1433,6 +1518,30 @@
    *   TWD67 250000 2650000       TWD67 二度分帶
    * 「TWD97」「WGS84」裡的數字會先剔除，不會被誤當成座標。
    */
+
+  /* 地號寫法：
+   *   中苗段880           用目前選定或上次查到的縣市
+   *   苗栗縣中苗段880-1    自己指定縣市
+   *   苗栗縣 0212 880      段代碼也可以
+   * 縣市判斷順序：字串裡寫的 → 地段瀏覽選的 → 上次點擊的位置。
+   */
+  function parseLandQuery(q) {
+    var t = q.replace(/\s+/g, ' ').trim();
+    var county = null;
+    var mc = t.match(/(臺北市|台北市|新北市|桃園市|臺中市|台中市|臺南市|台南市|高雄市|基隆市|新竹市|嘉義市|新竹縣|苗栗縣|彰化縣|南投縣|雲林縣|嘉義縣|屏東縣|宜蘭縣|花蓮縣|臺東縣|台東縣|澎湖縣|金門縣|連江縣)/);
+    if (mc) { county = mc[1].replace(/^台/, '臺'); t = t.replace(mc[1], ' '); }
+
+    // 段名（可含小段）＋地號
+    var m = t.match(/([一-龥]{1,10}段(?:[一-龥]{1,8}小段)?)\s*(\d{1,4}(?:\s*[-－之]\s*\d{1,4})?)\s*(?:地號)?$/);
+    if (m) return { county: county, sect: m[1], no: m[2].replace(/\s|之|－/g, function (c) { return c === ' ' ? '' : '-'; }) };
+
+    // 四碼段代碼＋地號
+    var m2 = t.match(/(?:^|\s)(\d{4})\s+(\d{1,4}(?:\s*[-－之]\s*\d{1,4})?)\s*(?:地號)?$/);
+    if (m2 && county) return { county: county, sect: m2[1], no: m2[2].replace(/\s|之|－/g, function (c) { return c === ' ' ? '' : '-'; }) };
+
+    return null;
+  }
+
   function parseCoords(q) {
     var toks = q.match(/-?\d+(\.\d+)?/g);
     if (!toks || toks.length < 2) return null;
@@ -1473,6 +1582,21 @@
       map.setView(ll, Math.max(map.getZoom(), 17));
       setPoint(ll);
       hint('已定位到座標');
+      return;
+    }
+
+    // 地號優先於地名 —— 「中苗段880」不該被當成地名去搜
+    var lq = parseLandQuery(q);
+    if (lq) {
+      var sel = state.sect.sel;
+      var cty = lq.county
+        || (sel && sel.countyName)
+        || (state.lastAdmin && state.lastAdmin.cty);
+      if (!cty) {
+        hint('請在地號前面加上縣市，例如「苗栗縣中苗段880」', 6000);
+        return;
+      }
+      findLandNo(cty, lq.sect, lq.no, null);
       return;
     }
 

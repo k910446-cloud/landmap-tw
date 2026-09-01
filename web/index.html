@@ -211,14 +211,21 @@
     <section class="pane" data-pane="sect">
       <div class="card">
         <h3>地段瀏覽</h3>
-        <p class="fineprint">資料來自國土測繪中心代碼服務。選到「段」之後可把段碼複製到
-           地政系統查詢，地圖也會開啟段籍圖。</p>
+        <p class="fineprint">資料來自國土測繪中心代碼服務。選到「段」之後可直接輸入地號定位，
+           也可以把段碼複製到地政系統查詢；地圖會同時開啟段籍圖。</p>
         <label class="fld"><span>縣市</span>
           <select id="sel-county"><option value="">載入中…</option></select></label>
         <label class="fld"><span>鄉鎮市區</span>
           <select id="sel-town" disabled><option value="">請先選縣市</option></select></label>
         <label class="fld"><span>段小段</span>
           <select id="sel-sect" disabled><option value="">請先選鄉鎮市區</option></select></label>
+        <label class="fld"><span>地號</span>
+          <input id="in-landno" type="text" inputmode="numeric"
+                 placeholder="例如 880 或 880-1" disabled></label>
+        <div class="row">
+          <button class="btn primary" id="btn-landno-go" disabled>查這筆地號</button>
+        </div>
+        <div id="landno-msg" class="fineprint"></div>
         <dl id="sect-info"></dl>
         <div class="row">
           <button class="btn" id="btn-sect-copy" disabled>複製段代碼</button>
