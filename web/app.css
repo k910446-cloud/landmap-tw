@@ -336,3 +336,11 @@ dd{margin:0;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
 .projlist{display:inline-flex;flex-wrap:wrap;gap:4px;margin-left:4px}
 .projname{font-size:11px;color:#1864ab;border:1px solid #a5c8e8;background:#eef6fd;
   border-radius:5px;padding:1px 6px}
+
+/* 逐年走勢 */
+.trendbox{margin-top:10px}
+.trend{display:flex;align-items:flex-end;gap:4px;margin-top:6px;overflow-x:auto;padding-bottom:2px}
+.trendcol{display:flex;flex-direction:column;align-items:center;gap:2px;min-width:26px}
+.trendbar{width:16px;background:var(--brand-2);border-radius:3px 3px 0 0}
+.trendval{font-size:10px;color:var(--ink-2)}
+.trendyear{font-size:10px;color:var(--ink-3)}

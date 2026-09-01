@@ -1743,6 +1743,9 @@
           + d.sectionParcels + ' 筆地號。'));
       }
 
+      var tb = trendBox(d.trend);
+      if (tb) body.appendChild(tb);
+
       if (d.recent && d.recent.length) {
         var det = el('details', 'pricemore');
         det.appendChild(el('summary', null, '同段最近的成交（' + d.recent.length + ' 筆）'));
@@ -1753,7 +1756,8 @@
       }
 
       body.appendChild(el('p', 'fineprint',
-        d.source + '　季別 ' + d.seasons.join('、')
+        d.source + '　收錄 ' + d.seasons.length + ' 季（'
+        + d.seasons[d.seasons.length - 1] + ' ～ ' + d.seasons[0] + '）'
         + '。單價由政府欄位的每平方公尺換算為每坪，未自行推算。'
         + '成交價受屋齡、樓層、車位、裝潢與交易條件影響很大，僅供參考。'));
     }).catch(function (e) {
@@ -1780,6 +1784,39 @@
     return base + '，' + when + '）';
   }
 
+
+  /* 逐年走勢：收了十年資料，最有價值的就是看得出漲跌。
+   * 用純 CSS 的長條，不引第三方繪圖套件 —— 這個 App 是離線可用的，
+   * 多一個外部相依就多一個離線會壞掉的地方。
+   */
+  function trendBox(rows) {
+    if (!rows || rows.length < 2) return null;
+    var max = rows.reduce(function (a, r) { return Math.max(a, r.median); }, 0);
+    var box = el('div', 'trendbox');
+    box.appendChild(el('div', 'pricesub', '成屋房價逐年中位數（萬元/坪）'));
+    var chart = el('div', 'trend');
+    rows.forEach(function (r) {
+      var col = el('div', 'trendcol');
+      col.title = r.year + ' 年　' + (r.median / 10000).toFixed(1)
+        + ' 萬/坪　' + r.n + ' 筆';
+      var bar = el('div', 'trendbar');
+      bar.style.height = Math.max(4, Math.round(r.median / max * 64)) + 'px';
+      col.appendChild(el('span', 'trendval', (r.median / 10000).toFixed(0)));
+      col.appendChild(bar);
+      col.appendChild(el('span', 'trendyear', String(r.year)));
+      chart.appendChild(col);
+    });
+    box.appendChild(chart);
+    var first = rows[0], last = rows[rows.length - 1];
+    var pct = Math.round((last.median - first.median) / first.median * 100);
+    box.appendChild(el('p', 'fineprint',
+      first.year + '→' + last.year + ' 年　'
+      + (first.median / 10000).toFixed(1) + ' → ' + (last.median / 10000).toFixed(1)
+      + ' 萬/坪，' + (pct >= 0 ? '上漲 ' : '下跌 ') + Math.abs(pct) + '%。'
+      + '已排除特殊交易，每年不足三筆的年度不列。'));
+    return box;
+  }
+
   function wan(perPing) {
     return (perPing / 10000).toFixed(1);
   }
@@ -1796,6 +1833,8 @@
       row.appendChild(el('span', 'dealarea', t.areaPing + ' 坪'));
     }
     if (t.project) row.appendChild(el('span', 'dealproj', t.project));
+    if (t.btype) row.appendChild(el('span', 'dealage', t.btype));
+    if (t.use && t.use !== '住家用') row.appendChild(el('span', 'dealage', t.use));
     if (t.age) row.appendChild(el('span', 'dealage', '屋齡 ' + t.age + ' 年'));
     (t.notes || []).forEach(function (n) {
       row.appendChild(el('span', 'dealflag', n));

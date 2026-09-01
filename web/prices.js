@@ -5,7 +5,10 @@
  * 跟這個 App 查地籍用的鍵一模一樣，所以能精準掛到宗地上，
  * 不必走地址地理編碼那種會失準的做法。
  *
- * 一個縣市一個 JSON，第一次用到才載入，之後留在記憶體重複使用。
+ * 收錄十年份之後，一個縣市的資料太大（新北的 JSON 會超過 30 MB），
+ * 所以改成「小索引 ＋ 二進位大檔」：索引記錄每個段在 .bin 裡的位移，
+ * 點下去只用 HTTP Range 抓需要的那一段（通常幾十 KB）。
+ * 跟非都市圖層是同一套做法。
  */
 (function (g) {
   'use strict';
@@ -13,9 +16,11 @@
   var cache = {};
   var PING = 400 / 121;
 
+  var sectCache = {};
+
   function load(county) {
     if (cache[county]) return cache[county];
-    cache[county] = fetch('prices/' + encodeURIComponent(county) + '.json')
+    cache[county] = fetch('prices/' + encodeURIComponent(county) + '.idx.json')
       .then(function (r) {
         if (!r.ok) throw new Error('no-data');
         return r.json();
@@ -25,6 +30,80 @@
         throw e;
       });
     return cache[county];
+  }
+
+  // ── varint 解碼 ────────────────────────────────────────────
+  function Reader(bytes) { this.b = bytes; this.p = 0; }
+  Reader.prototype.u = function () {
+    var shift = 0, out = 0, b;
+    do {
+      b = this.b[this.p++];
+      out += (b & 0x7f) * Math.pow(2, shift);
+      shift += 7;
+    } while (b & 0x80);
+    return out;
+  };
+  Reader.prototype.s = function () {
+    var n = this.u();
+    return (n % 2) ? -(n + 1) / 2 : n / 2;
+  };
+
+  /* 解出一個段：{ 八碼地號: [ [年月, 總價萬, 單價元每坪, 面積, 類型,
+   *                          旗標, 屋齡, 建案, 建物型態, 主要用途], ... ] }
+   * 年月與單價在檔案裡是差分過的，這裡還原。
+   */
+  function decodeSection(bytes) {
+    var r = new Reader(bytes);
+    var nParcel = r.u();
+    var out = {};
+    for (var i = 0; i < nParcel; i++) {
+      var no = r.u();
+      var key = ('00000000' + no).slice(-8);
+      var n = r.u();
+      var rows = [];
+      var ym = 0, unit = 0;
+      for (var j = 0; j < n; j++) {
+        ym += r.s();
+        var total = r.u() / 10;
+        unit += r.s();
+        var area = r.u() / 10;
+        var kind = r.u();
+        var flags = r.u();
+        var age = r.u() - 1;
+        var proj = r.u() - 1;
+        var btype = r.u() - 1;
+        var use = r.u() - 1;
+        rows.push([ym, total, unit, area, kind, flags, age, proj, btype, use]);
+      }
+      rows.sort(function (a, b) { return b[0] - a[0]; });   // 新到舊
+      out[key] = rows;
+    }
+    return out;
+  }
+
+  function loadSection(county, sect) {
+    var ck = county + '/' + sect;
+    if (sectCache[ck]) return sectCache[ck];
+    sectCache[ck] = load(county).then(function (meta) {
+      var span = (meta.sections || {})[sect];
+      if (!span) return null;
+      var from = span[0], to = span[0] + span[1] - 1;
+      return fetch('prices/' + encodeURIComponent(county) + '.bin', {
+        headers: { Range: 'bytes=' + from + '-' + to }
+      }).then(function (r) {
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return r.arrayBuffer();
+      }).then(function (buf) {
+        var u8 = new Uint8Array(buf);
+        // 伺服器不支援 Range 會回整包 200，自己切出需要的段
+        if (u8.length > span[1]) u8 = u8.subarray(from, from + span[1]);
+        return decodeSection(u8);
+      });
+    }).catch(function (e) {
+      delete sectCache[ck];
+      throw e;
+    });
+    return sectCache[ck];
   }
 
   // 「880」「880-1」→ 八碼 08800000
@@ -93,14 +172,18 @@
   /* 算中位數時先排除備註有特殊情形的成交（親友交易、含增建裝潢…）。
    * 排掉之後樣本不足三筆才放回來，並且回報有沒有含特殊交易 ——
    * 單一地號常常只有兩三筆成交，一筆親友交易就足以主導結果。
+   *
+   * 「持分移轉」（旗標 16）不算特殊：公寓大樓的土地本來就是每戶持分，
+   * 把它當特殊交易排掉，等於把幾乎所有住宅成交都丟了。它只做標示。
    */
+  var EXCLUDE_MASK = 1 | 2 | 4 | 8;
   function recentMedian(rows, kinds) {
     var all = rows.filter(function (r) {
       return r[2] > 0 && (!kinds || kinds.indexOf(r[4]) >= 0);
     });
-    var clean = all.filter(function (r) { return !r[5]; });
+    var clean = all.filter(function (r) { return !(r[5] & EXCLUDE_MASK); });
     var units = (clean.length >= MIN_SAMPLES) ? clean : all;
-    var dirty = units.length - units.filter(function (r) { return !r[5]; }).length;
+    var dirty = units.filter(function (r) { return r[5] & EXCLUDE_MASK; }).length;
     if (!units.length) return { median: 0, n: 0, months: 0, flagged: 0 };
     var newest = units.reduce(function (a, r) { return Math.max(a, r[0]); }, 0);
     var cut = shiftYm(newest, -RECENT_MONTHS + 1);
@@ -108,7 +191,7 @@
     if (recent.length >= MIN_SAMPLES) {
       return { median: medianOf(recent.map(function (r) { return r[2]; })),
                n: recent.length, months: RECENT_MONTHS, newest: newest,
-               flagged: recent.filter(function (r) { return r[5]; }).length,
+               flagged: recent.filter(function (r) { return r[5] & EXCLUDE_MASK; }).length,
                excluded: all.length - units.length };
     }
     return { median: medianOf(units.map(function (r) { return r[2]; })),
@@ -131,6 +214,8 @@
         age: (r[6] != null && r[6] > 0) ? r[6] : null,
         project: (r[7] != null && r[7] >= 0)
           ? (meta.projects || [])[r[7]] : null,
+        btype: (r[8] != null && r[8] >= 0) ? (meta.btypes || [])[r[8]] : null,
+        use: (r[9] != null && r[9] >= 0) ? (meta.uses || [])[r[9]] : null,
         notes: Object.keys(meta.flags || {})
           .filter(function (bit) { return (r[5] || 0) & Number(bit); })
           .map(function (bit) { return meta.flags[bit]; })
@@ -143,6 +228,24 @@
    * 同段的中位數比平均值實在 —— 一兩筆特別高或特別低的成交
    * （通常是親友間交易或含裝潢）會把平均值拉走。
    */
+
+
+  /* 逐年的房價中位數 —— 收了十年資料，最有價值的就是看得出走勢。
+   * 一樣排除特殊交易，且一年不足三筆就不列（樣本太少的點會誤導）。
+   */
+  function yearlyTrend(rows) {
+    var by = {};
+    rows.forEach(function (r) {
+      if (r[2] <= 0 || (r[5] & EXCLUDE_MASK) || HOUSE_KINDS.indexOf(r[4]) < 0) return;
+      var y = Math.floor(r[0] / 100);
+      (by[y] = by[y] || []).push(r[2]);
+    });
+    return Object.keys(by).map(Number).sort(function (a, b) { return a - b; })
+      .filter(function (y) { return by[y].length >= 3; })
+      .map(function (y) {
+        return { year: y, median: medianOf(by[y]), n: by[y].length };
+      });
+  }
 
   // 這一段有哪些建案（只有預售屋的資料帶建案名稱）
   function projectSummary(meta, sec) {
@@ -163,69 +266,67 @@
     if (!county || !sect) {
       return Promise.resolve({ status: 'need-parcel' });
     }
-    return load(county).then(function (meta) {
-      var sec = (meta.sections || {})[sect];
-      if (!sec) {
-        return { status: 'no-section', county: county, sect: sect,
-          seasons: meta.seasons, source: meta.source,
-          message: sect + ' 在最近 ' + meta.seasons.length + ' 季沒有成交紀錄' };
-      }
-      var eight = toEight(landNo);
-      var own = decorate(meta, eight ? sec[eight] : null);
+    return Promise.all([load(county), loadSection(county, sect)])
+      .then(function (both) {
+        var meta = both[0], sec = both[1];
+        if (!sec) {
+          return { status: 'no-section', county: county, sect: sect,
+            seasons: meta.seasons, source: meta.source,
+            message: sect + ' 在最近 ' + meta.seasons.length + ' 季沒有成交紀錄' };
+        }
+        var eight = toEight(landNo);
+        var own = decorate(meta, eight ? sec[eight] : null);
 
-      /* 同段周邊：把整段的紀錄攤平。
-       *
-       * 一筆交易可能橫跨好幾筆地號（例如一棟房子座落在三筆地上），
-       * 那筆成交會掛在每一筆地號底下。攤平算整段行情時要去重，
-       * 否則跨多筆地號的交易會被重複計入，等於給它較高的權重。
-       * 用「年月＋總價＋單價＋面積」當識別，實務上足以區分不同交易。
-       */
-      var all = [], seen = {};
-      Object.keys(sec).forEach(function (k) {
-        (sec[k] || []).forEach(function (r) {
-          var id = r[0] + '/' + r[1] + '/' + r[2] + '/' + r[3];
-          if (seen[id]) return;
-          seen[id] = 1;
-          all.push(r);
+        /* 同段周邊：把整段的紀錄攤平。
+         *
+         * 一筆交易可能橫跨好幾筆地號（例如一棟房子座落在三筆地上），
+         * 那筆成交會掛在每一筆地號底下。攤平算整段行情時要去重，
+         * 否則跨多筆地號的交易會被重複計入，等於給它較高的權重。
+         * 用「年月＋總價＋單價＋面積」當識別，實務上足以區分不同交易。
+         */
+        var all = [], seen = {};
+        Object.keys(sec).forEach(function (k) {
+          sec[k].forEach(function (r) {
+            var id = r[0] + '/' + r[1] + '/' + r[2] + '/' + r[3];
+            if (seen[id]) return;
+            seen[id] = 1;
+            all.push(r);
+          });
         });
+
+        return {
+          status: 'ok', county: county, sect: sect,
+          seasons: meta.seasons, source: meta.source, licence: meta.licence,
+          own: own,
+          ownLand: recentMedian((eight && sec[eight]) || [], LAND_KINDS),
+          ownHouse: recentMedian((eight && sec[eight]) || [], HOUSE_KINDS),
+          sectionCount: all.length,
+          sectionParcels: Object.keys(sec).length,
+          land: recentMedian(all, LAND_KINDS),
+          house: recentMedian(all, HOUSE_KINDS),
+          presale: recentMedian(all, PRESALE_KINDS),
+          projects: projectSummary(meta, sec),
+          trend: yearlyTrend(all),
+          recent: decorate(meta, all.slice()
+            .sort(function (a, b) { return b[0] - a[0]; }).slice(0, 8))
+        };
+      }).catch(function (e) {
+        if (e && e.message === 'no-data') {
+          return { status: 'unavailable', county: county,
+            message: '還沒有 ' + county + ' 的實價登錄資料' };
+        }
+        return { status: 'error', message: '讀取成交資料失敗：' + (e.message || e) };
       });
-      var landStat = recentMedian(all, LAND_KINDS);
-      var houseStat = recentMedian(all, HOUSE_KINDS);
-      var preStat = recentMedian(all, PRESALE_KINDS);
-
-      return {
-        status: 'ok', county: county, sect: sect,
-        seasons: meta.seasons, source: meta.source, licence: meta.licence,
-        own: own,
-        ownLand: recentMedian((eight && sec[eight]) || [], LAND_KINDS),
-        ownHouse: recentMedian((eight && sec[eight]) || [], HOUSE_KINDS),
-        sectionCount: all.length,
-        sectionParcels: Object.keys(sec).length,
-        land: landStat,
-        house: houseStat,
-        presale: preStat,
-        projects: projectSummary(meta, sec),
-        recent: decorate(meta, all.slice().sort(function (a, b) { return b[0] - a[0]; }).slice(0, 8))
-      };
-    }).catch(function (e) {
-      if (e && e.message === 'no-data') {
-        return { status: 'unavailable', county: county,
-          message: '還沒有 ' + county + ' 的實價登錄資料' };
-      }
-      return { status: 'error', message: '讀取成交資料失敗：' + (e.message || e) };
-    });
   }
-
 
   /* 給地圖圖層用：一次拿整段的「每筆地號近期單價中位數」。
    *
-   * 逐筆去問會發出成百上千次查詢，所以直接把整個縣市的檔載進來
-   * （最大的新北 4.9 MB，載一次就留著），在前端算好再交給圖層。
+   * 圖層一次要標畫面內幾十筆地號，逐筆去問會發出成百上千次查詢，
+   * 所以直接拿整個段的資料（一次 Range 請求）在前端算完再交給圖層。
    */
   function sectionMedians(county, sect, mode) {
     var kinds = (mode === 'land') ? LAND_KINDS : HOUSE_KINDS;
-    return load(county).then(function (meta) {
-      var sec = (meta.sections || {})[sect];
+    return loadSection(county, sect).then(function (sec) {
       if (!sec) return null;
       var out = {};
       Object.keys(sec).forEach(function (no8) {
