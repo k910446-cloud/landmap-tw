@@ -67,9 +67,11 @@ COUNTY_CODE = {
     "x": "澎湖縣", "z": "連江縣",
 }
 
-# 交易標的壓成一個小數字
+# 交易標的壓成一個小數字。5 是預售屋 —— 它在另一個檔案裡，
+# 價格性質也跟成屋不同（賣的是還沒蓋好的房子），所以獨立一類。
 KIND = {"土地": 0, "房地(土地+建物)": 1, "建物": 2, "車位": 3,
         "房地(土地+建物)+車位": 4}
+PRESALE_KIND = 5
 
 
 def seasons_back(n):
@@ -136,8 +138,38 @@ def to_int(t):
         return 0
 
 
-def deal_record(m):
-    """一筆交易壓成小陣列：[年月, 總價萬, 單價元每坪, 面積m2, 類型]。"""
+# 備註欄會註明特殊交易情形。這些成交不能當一般行情看 ——
+# 親友間交易通常低於市價，含增建或裝潢則會墊高單價。
+#
+# 實測 115S2 四縣市 21066 筆房地交易：有標記的佔 23.7%（親友 8.0%、
+# 含增建未登記 15.8%）。整段的中位數其實只差 1.6%（36.4 → 37.0 萬），
+# 中位數本來就抗離群值；但單一地號往往只有兩三筆成交，那時一筆親友
+# 交易就足以主導結果，所以還是要標出來、算的時候能排除。
+NOTE_FLAGS = [
+    (1, r"親友|特殊關係|員工|共有人"),
+    (2, r"裝潢|家具|傢俱"),
+    (4, r"未登記建物|增建"),
+    (8, r"債務|債權|法拍|拍賣"),
+]
+
+
+def note_flags(text):
+    v = 0
+    for bit, pat in NOTE_FLAGS:
+        if re.search(pat, text or ""):
+            v |= bit
+    return v
+
+
+def deal_record(m, presale=False, age=None, project=None):
+    """一筆交易壓成小陣列。
+
+    [年月, 總價萬, 單價元每坪, 面積m2, 類型, 備註旗標, 屋齡, 建案編號]
+
+    屋齡與建案名稱不是每筆都有：屋齡來自成屋的建物明細檔，
+    建案名稱只有預售屋檔才有 —— 成屋的開放資料沒有這個欄位，
+    這是資料本身的限制，不是漏抓。
+    """
     ym = to_int(m.get("交易年月日"))
     ym = ym // 100 if ym > 100000 else ym          # 1141102 → 11411
     total = to_int(m.get("總價元"))
@@ -148,40 +180,76 @@ def deal_record(m):
             or float(m.get("土地移轉總面積平方公尺") or 0)
     except (TypeError, ValueError):
         area = 0.0
-    kind = KIND.get((m.get("交易標的") or "").strip(), 9)
+    kind = PRESALE_KIND if presale else KIND.get((m.get("交易標的") or "").strip(), 9)
     return [ym, round(total / 10000.0, 1), int(round(unit_m2 * PING)),
-            round(area, 1), kind]
+            round(area, 1), kind, note_flags(m.get("備註")),
+            age if age is not None else -1,
+            project if project is not None else -1]
 
 
-def build_county(z, code, county, store):
-    main = read_csv(z, "%s_lvr_land_a.csv" % code)
-    land = read_csv(z, "%s_lvr_land_a_land.csv" % code)
-    if not main:
-        return 0
-
-    by_id = {}
-    for row in land:
-        sid = (row.get("編號") or "").strip()
-        if sid:
-            by_id.setdefault(sid, []).append(row)
-
+def build_county(z, code, county, store, projects):
+    """成屋（a）與預售屋（b）都收，兩者都能靠土地明細對到地號。"""
     added = 0
-    for m in main:
-        sid = (m.get("編號") or "").strip()
-        parts = by_id.get(sid)
-        if not parts:
-            continue
-        rec = deal_record(m)
+
+    def link(rows):
+        by = {}
+        for row in rows:
+            sid = (row.get("編號") or "").strip()
+            if sid:
+                by.setdefault(sid, []).append(row)
+        return by
+
+    def attach(m, parts, presale, age, project):
+        nonlocal added
+        rec = deal_record(m, presale=presale, age=age, project=project)
         if rec[1] <= 0:
-            continue
+            return
         for p in parts:
             sect = (p.get("土地位置") or "").strip()
             no8 = (p.get("地號") or "").strip()
             if not sect or not re.match(r"^\d{8}$", no8):
                 continue
-            store.setdefault(county, {}).setdefault(sect, {}) \
-                 .setdefault(no8, []).append(rec)
+            store.setdefault(county, {}).setdefault(sect, {})                  .setdefault(no8, []).append(rec)
             added += 1
+
+    # ── 成屋 ──
+    main = read_csv(z, "%s_lvr_land_a.csv" % code)
+    by_land = link(read_csv(z, "%s_lvr_land_a_land.csv" % code))
+    by_build = link(read_csv(z, "%s_lvr_land_a_build.csv" % code))
+    for m in main:
+        sid = (m.get("編號") or "").strip()
+        parts = by_land.get(sid)
+        if not parts:
+            continue
+        # 屋齡在建物明細檔。一筆交易可能含好幾棟，取第一棟就好 ——
+        # 同一次交易的建物通常是同一批完工的
+        age = None
+        b = (by_build.get(sid) or [None])[0]
+        if b:
+            a = to_int(b.get("屋齡"))
+            if a > 0:
+                age = a
+        attach(m, parts, False, age, None)
+
+    # ── 預售屋：只有這個檔有建案名稱 ──
+    pre = read_csv(z, "%s_lvr_land_b.csv" % code)
+    pre_land = link(read_csv(z, "%s_lvr_land_b_land.csv" % code))
+    for m in pre:
+        sid = (m.get("編號") or "").strip()
+        parts = pre_land.get(sid)
+        if not parts:
+            continue
+        name = (m.get("建案名稱") or "").strip()
+        pid = None
+        if name:
+            lst = projects.setdefault(county, [])
+            idx = projects.setdefault(county + "#idx", {})
+            if name not in idx:
+                idx[name] = len(lst)
+                lst.append(name)
+            pid = idx[name]
+        attach(m, parts, True, 0, pid)
+
     return added
 
 
@@ -193,6 +261,7 @@ def main():
 
     want = seasons_back(args.seasons)
     store = {}
+    projects = {}
     used = []
 
     for season in want:
@@ -206,7 +275,7 @@ def main():
             for code, county in COUNTY_CODE.items():
                 if args.county and county not in args.county:
                     continue
-                n += build_county(z, code, county, store)
+                n += build_county(z, code, county, store, projects)
         used.append(season)
         print("  %s 完成，累計掛到宗地的紀錄 %d 筆" % (season, n))
 
@@ -227,8 +296,13 @@ def main():
             "seasons": used,
             "source": "內政部不動產成交案件實際資訊資料供應系統（實價登錄）",
             "licence": "政府資料開放授權條款－第 1 版",
-            "fields": ["交易年月", "總價萬元", "單價元每坪", "面積平方公尺", "類型"],
-            "kinds": {str(v): k for k, v in KIND.items()},
+            "fields": ["交易年月", "總價萬元", "單價元每坪", "面積平方公尺",
+                       "類型", "備註旗標", "屋齡", "建案編號"],
+            "projects": projects.get(county, []),
+            "flags": {"1": "親友或特殊關係間交易", "2": "含裝潢或家具",
+                      "4": "含增建或未登記建物", "8": "債權債務或法拍"},
+            "kinds": dict({str(v): k for k, v in KIND.items()},
+                          **{str(PRESALE_KIND): "預售屋"}),
             "sections": sections,
         }
         p = os.path.join(OUT_DIR, "%s.json" % county)

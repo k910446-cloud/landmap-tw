@@ -87,21 +87,33 @@
    */
   var LAND_KINDS = [0];
   var HOUSE_KINDS = [1, 2, 4];
+  // 預售屋賣的是還沒蓋好的房子，價格性質跟成屋不同，另外算
+  var PRESALE_KINDS = [5];
 
+  /* 算中位數時先排除備註有特殊情形的成交（親友交易、含增建裝潢…）。
+   * 排掉之後樣本不足三筆才放回來，並且回報有沒有含特殊交易 ——
+   * 單一地號常常只有兩三筆成交，一筆親友交易就足以主導結果。
+   */
   function recentMedian(rows, kinds) {
-    var units = rows.filter(function (r) {
+    var all = rows.filter(function (r) {
       return r[2] > 0 && (!kinds || kinds.indexOf(r[4]) >= 0);
     });
-    if (!units.length) return { median: 0, n: 0, months: 0 };
+    var clean = all.filter(function (r) { return !r[5]; });
+    var units = (clean.length >= MIN_SAMPLES) ? clean : all;
+    var dirty = units.length - units.filter(function (r) { return !r[5]; }).length;
+    if (!units.length) return { median: 0, n: 0, months: 0, flagged: 0 };
     var newest = units.reduce(function (a, r) { return Math.max(a, r[0]); }, 0);
     var cut = shiftYm(newest, -RECENT_MONTHS + 1);
     var recent = units.filter(function (r) { return r[0] >= cut; });
     if (recent.length >= MIN_SAMPLES) {
       return { median: medianOf(recent.map(function (r) { return r[2]; })),
-               n: recent.length, months: RECENT_MONTHS, newest: newest };
+               n: recent.length, months: RECENT_MONTHS, newest: newest,
+               flagged: recent.filter(function (r) { return r[5]; }).length,
+               excluded: all.length - units.length };
     }
     return { median: medianOf(units.map(function (r) { return r[2]; })),
-             n: units.length, months: 0, newest: newest };
+             n: units.length, months: 0, newest: newest, flagged: dirty,
+             excluded: all.length - units.length };
   }
 
   function decorate(meta, rows) {
@@ -115,7 +127,13 @@
         unitPerPing: r[2],
         areaM2: r[3],
         areaPing: r[3] ? Math.round(r[3] / PING * 100) / 100 : 0,
-        kind: (meta.kinds || {})[String(r[4])] || '其他'
+        kind: (meta.kinds || {})[String(r[4])] || '其他',
+        age: (r[6] != null && r[6] > 0) ? r[6] : null,
+        project: (r[7] != null && r[7] >= 0)
+          ? (meta.projects || [])[r[7]] : null,
+        notes: Object.keys(meta.flags || {})
+          .filter(function (bit) { return (r[5] || 0) & Number(bit); })
+          .map(function (bit) { return meta.flags[bit]; })
       };
     });
   }
@@ -125,6 +143,22 @@
    * 同段的中位數比平均值實在 —— 一兩筆特別高或特別低的成交
    * （通常是親友間交易或含裝潢）會把平均值拉走。
    */
+
+  // 這一段有哪些建案（只有預售屋的資料帶建案名稱）
+  function projectSummary(meta, sec) {
+    var names = {};
+    Object.keys(sec).forEach(function (no8) {
+      sec[no8].forEach(function (r) {
+        if (r[7] != null && r[7] >= 0) {
+          var nm = (meta.projects || [])[r[7]];
+          if (nm) names[nm] = (names[nm] || 0) + 1;
+        }
+      });
+    });
+    return Object.keys(names).sort(function (a, b) { return names[b] - names[a]; })
+      .map(function (nm) { return { name: nm, count: names[nm] }; });
+  }
+
   function query(county, sect, landNo) {
     if (!county || !sect) {
       return Promise.resolve({ status: 'need-parcel' });
@@ -139,13 +173,25 @@
       var eight = toEight(landNo);
       var own = decorate(meta, eight ? sec[eight] : null);
 
-      // 同段周邊：把整段的紀錄攤平，算中位數
-      var all = [];
+      /* 同段周邊：把整段的紀錄攤平。
+       *
+       * 一筆交易可能橫跨好幾筆地號（例如一棟房子座落在三筆地上），
+       * 那筆成交會掛在每一筆地號底下。攤平算整段行情時要去重，
+       * 否則跨多筆地號的交易會被重複計入，等於給它較高的權重。
+       * 用「年月＋總價＋單價＋面積」當識別，實務上足以區分不同交易。
+       */
+      var all = [], seen = {};
       Object.keys(sec).forEach(function (k) {
-        (sec[k] || []).forEach(function (r) { all.push(r); });
+        (sec[k] || []).forEach(function (r) {
+          var id = r[0] + '/' + r[1] + '/' + r[2] + '/' + r[3];
+          if (seen[id]) return;
+          seen[id] = 1;
+          all.push(r);
+        });
       });
       var landStat = recentMedian(all, LAND_KINDS);
       var houseStat = recentMedian(all, HOUSE_KINDS);
+      var preStat = recentMedian(all, PRESALE_KINDS);
 
       return {
         status: 'ok', county: county, sect: sect,
@@ -157,6 +203,8 @@
         sectionParcels: Object.keys(sec).length,
         land: landStat,
         house: houseStat,
+        presale: preStat,
+        projects: projectSummary(meta, sec),
         recent: decorate(meta, all.slice().sort(function (a, b) { return b[0] - a[0]; }).slice(0, 8))
       };
     }).catch(function (e) {

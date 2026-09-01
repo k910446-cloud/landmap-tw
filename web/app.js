@@ -1714,8 +1714,23 @@
 
       statLine('這筆地號　房價', d.ownHouse);
       statLine('這筆地號　地價', d.ownLand);
-      statLine(d.sect + '　房價中位數', d.house);
+      statLine(d.sect + '　成屋房價中位數', d.house);
+      statLine(d.sect + '　預售中位數', d.presale);
       statLine(d.sect + '　地價中位數', d.land);
+
+      if (d.projects && d.projects.length) {
+        var pj = el('div', 'pricestat');
+        pj.appendChild(el('b', null, '這一段的建案'));
+        var wrap = el('span', 'projlist');
+        d.projects.slice(0, 12).forEach(function (p2) {
+          wrap.appendChild(el('span', 'projname', p2.name + '（' + p2.count + '）'));
+        });
+        pj.appendChild(wrap);
+        body.appendChild(pj);
+        body.appendChild(el('p', 'fineprint',
+          '建案名稱只有預售屋的資料才有 —— 成屋的實價登錄沒有這個欄位，'
+          + '所以已完工的社區查不到名字，這是資料本身的限制。'));
+      }
 
       if (d.house.median || d.land.median) {
         body.appendChild(el('p', 'fineprint',
@@ -1757,9 +1772,12 @@
       ? ('至 ' + Math.floor(st.newest / 100) + '年'
          + ('0' + (st.newest % 100)).slice(-2) + '月')
       : '';
-    return st.months
-      ? '（近一年 ' + st.n + ' 筆，' + when + '）'
-      : '（近一年不足三筆，改用全部 ' + st.n + ' 筆，' + when + '）';
+    var base = st.months
+      ? '（近一年 ' + st.n + ' 筆'
+      : '（近一年不足三筆，改用全部 ' + st.n + ' 筆';
+    if (st.excluded) base += '，已排除 ' + st.excluded + ' 筆特殊交易';
+    else if (st.flagged) base += '，含 ' + st.flagged + ' 筆特殊交易';
+    return base + '，' + when + '）';
   }
 
   function wan(perPing) {
@@ -1777,6 +1795,11 @@
     if (t.areaPing) {
       row.appendChild(el('span', 'dealarea', t.areaPing + ' 坪'));
     }
+    if (t.project) row.appendChild(el('span', 'dealproj', t.project));
+    if (t.age) row.appendChild(el('span', 'dealage', '屋齡 ' + t.age + ' 年'));
+    (t.notes || []).forEach(function (n) {
+      row.appendChild(el('span', 'dealflag', n));
+    });
     return row;
   }
 
