@@ -13,7 +13,7 @@
  * 想先試不同的代理而不改這個檔，可以在網址後面加 ?proxy=https://...
  * 這個設定只留在你自己的瀏覽器，不影響別人。
  */
-window.PROXY_URL = '';
+window.PROXY_URL = 'https://landmap-proxy.k910446.workers.dev';
 
 (function () {
   'use strict';
