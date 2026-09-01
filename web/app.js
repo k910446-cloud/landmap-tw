@@ -1207,6 +1207,53 @@
     return box;
   }
 
+
+  /* 這種使用地能做什麼 —— 非都市土地使用管制規則附表一。
+   *
+   * 附表一在法規資料庫上只有 PDF，由 build_landuse.py 解出來（見該檔說明）。
+   * 只列「容許使用項目」，各項底下的細目沒有收 —— 那部分的解析對位在
+   * 跨頁與置中對齊下會整批錯開，寧可不給也不要給錯，改附原文連結。
+   */
+  function landUseBox(category) {
+    if (!window.LANDUSE || !category) return null;
+    var hit = null;
+    (LANDUSE.categories || []).forEach(function (c) {
+      if (c.category === category) hit = c;
+    });
+    if (!hit) return null;
+
+    var box = el('div', 'usebox');
+    box.appendChild(el('div', 'usehead', category + '　可以做什麼'));
+    box.appendChild(el('p', 'lawnote',
+      '非都市土地使用管制規則附表一為 ' + category + ' 列了以下 '
+      + hit.items.length + ' 種容許使用項目。'));
+
+    var list = el('div', 'uselist');
+    hit.items.forEach(function (name) {
+      list.appendChild(el('span', 'useitem', name));
+    });
+    box.appendChild(list);
+
+    box.appendChild(el('p', 'lawnote',
+      '容許不等於免申請：每一項底下還分「免經申請」與「需經目的事業主管'
+      + '機關、使用地主管機關及有關機關許可」兩種細目，多數另有附帶條件'
+      + '（面積上限、不得位於沿海保護區之類）。細目逐項不同，請看原文。'));
+
+    var refs = el('div', 'lawrefs');
+    var a = el('a', 'lawref', '附表一原文 PDF ↗');
+    a.href = LANDUSE.pdfUrl; a.target = '_blank'; a.rel = 'noopener';
+    refs.appendChild(a);
+    var a2 = el('a', 'lawref', '管制規則全文 ↗');
+    a2.href = LANDUSE.lawUrl; a2.target = '_blank'; a2.rel = 'noopener';
+    refs.appendChild(a2);
+    box.appendChild(refs);
+
+    box.appendChild(el('p', 'lawdisc',
+      '項目名稱由程式從附表一的 PDF 解析，不是人工轉抄。'
+      + '實際能不能做，仍以主管機關就個案的認定為準。'));
+    return box;
+  }
+
   function zoningRow(L, ll, county) {
     var row = el('div', 'zrow');
     row.appendChild(el('div', 'smp-lyr', L.title));
@@ -1232,6 +1279,10 @@
       row.appendChild(src);
       var lb = lawBox(L.value, L.key, county);
       if (lb) row.appendChild(lb);
+      if (L.key === 'nurban_desig') {
+        var ub = landUseBox(L.value);
+        if (ub) row.appendChild(ub);
+      }
 
     } else if (L.status === 'needs-download') {
       row.appendChild(el('div', 'zmsg',

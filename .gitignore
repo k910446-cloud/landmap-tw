@@ -28,3 +28,6 @@ desktop.ini
 
 # 實價登錄原始壓縮檔（每季約 15 MB，build_prices.py 會自己抓）
 data/lvr/
+
+# 附表一 PDF（build_landuse.py 會自己抓）
+data/附表一.pdf
