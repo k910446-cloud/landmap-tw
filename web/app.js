@@ -572,6 +572,28 @@
   var parcelSeq = 0;
   var PARCEL_MIN_ZOOM = 18;   // 再低會一次撈到上千筆，服務單次上限會截斷
 
+
+  /* 成交行情圖層：把畫面內的宗地改標每坪單價，並依價位上色。
+   *
+   * 分級用固定級距而不是「畫面內的相對高低」—— 相對配色會讓同一塊地
+   * 在不同縮放下顏色不一樣，看久了會誤判。固定級距至少顏色是穩定的。
+   */
+  var PRICE_BANDS = [
+    [10, '#2b8a3e'], [20, '#5c940d'], [30, '#e67700'],
+    [50, '#d9480f'], [80, '#c92a2a'], [Infinity, '#862e9c']
+  ];
+
+  function priceColor(perPing) {
+    var wanPing = perPing / 10000;
+    for (var i = 0; i < PRICE_BANDS.length; i++) {
+      if (wanPing < PRICE_BANDS[i][0]) return PRICE_BANDS[i][1];
+    }
+    return PRICE_BANDS[PRICE_BANDS.length - 1][1];
+  }
+
+  var showPriceMap = store.get('showPriceMap', false);
+  var priceMode = store.get('priceMode', 'house');   // house | land
+
   function setLandNoLayer(on) {
     showLandNo = on;
     store.set('showLandNo', on);
@@ -621,24 +643,116 @@
         if (n) n.textContent = d.message || '查不到';
         return;
       }
-      d.parcels.forEach(function (p) {
-        L.polygon(p.ring, {
-          color: '#8a5a3b', weight: 1, opacity: 0.9,
-          fill: true, fillOpacity: 0.02, interactive: false
-        }).addTo(parcelGroup);
-        L.marker(L.polygon(p.ring).getBounds().getCenter(), {
-          interactive: false,
-          icon: L.divIcon({ className: 'lnlabel', html: p.landNo, iconSize: [0, 0] })
-        }).addTo(parcelGroup);
+      function draw(medians) {
+        var priced = 0;
+        d.parcels.forEach(function (p) {
+          var med = null;
+          if (medians && p.sect) {
+            var key = medians[p.sect] && Prices.toEight(p.landNo);
+            if (key) med = medians[p.sect][key] || null;
+          }
+          if (med) priced++;
+          L.polygon(p.ring, {
+            color: med ? priceColor(med) : '#8a5a3b',
+            weight: med ? 1.5 : 1, opacity: 0.9,
+            fill: true,
+            fillColor: med ? priceColor(med) : '#8a5a3b',
+            fillOpacity: med ? 0.28 : 0.02,
+            interactive: false
+          }).addTo(parcelGroup);
+          L.marker(L.polygon(p.ring).getBounds().getCenter(), {
+            interactive: false,
+            icon: L.divIcon({
+              className: med ? 'lnlabel lnprice' : 'lnlabel',
+              html: med ? (med / 10000).toFixed(1) : p.landNo,
+              iconSize: [0, 0]
+            })
+          }).addTo(parcelGroup);
+        });
+
+        var n2 = $('#landno-note');
+        if (!n2) return;
+        var base = d.exceeded
+          ? '本畫面宗地太多，只標出 ' + d.count + ' 筆 —— 再放大一級就會標齊。'
+          : '本畫面 ' + d.count + ' 筆，已全部標出。';
+        if (showPriceMap) {
+          base += medians
+            ? '　其中 ' + priced + ' 筆有'
+              + (priceMode === 'land' ? '土地' : '房地') + '成交，標的是每坪'
+              + (priceMode === 'land' ? '地價' : '房價') + '中位數（萬元，近一年）。'
+            : '　這個縣市的圖層沒有段名，對不到實價登錄，只能標地號。';
+        }
+        n2.textContent = base;
+      }
+
+      if (!showPriceMap) { draw(null); return; }
+
+      // 畫面內可能跨好幾個段，各段的中位數表一起備好
+      var sects = {};
+      d.parcels.forEach(function (p) { if (p.sect) sects[p.sect] = 1; });
+      var names = Object.keys(sects);
+      if (!names.length) { draw(null); return; }
+      Promise.all(names.map(function (nm) {
+        return Prices.sectionMedians(county, nm, priceMode).then(function (m) { return [nm, m]; });
+      })).then(function (pairs) {
+        if (seq !== parcelSeq || !showLandNo) return;
+        var byS = {};
+        pairs.forEach(function (kv) { if (kv[1]) byS[kv[0]] = kv[1]; });
+        draw(Object.keys(byS).length ? byS : null);
       });
-      var n2 = $('#landno-note');
-      if (n2) n2.textContent = d.exceeded
-        ? '本畫面宗地太多，只標出 ' + d.count + ' 筆 —— 再放大一級就會標齊。'
-        : '本畫面 ' + d.count + ' 筆，已全部標出。';
     }).catch(function () { /* 移動很快時取消是正常的 */ });
   }
 
   map.on('moveend zoomend', function () { if (showLandNo) refreshParcels(); });
+
+
+  (function wirePriceMap() {
+    var cb = $('#cb-pricemap');
+    if (!cb) return;
+    cb.checked = showPriceMap;
+
+    // 顏色圖例 —— 沒有圖例的話，一張彩色的圖等於沒有資訊
+    var lg = el('div', 'pricelegend');
+    var prev = 0;
+    PRICE_BANDS.forEach(function (b) {
+      var sp = el('span');
+      var sw = el('i');
+      sw.style.background = b[1];
+      sp.appendChild(sw);
+      sp.appendChild(document.createTextNode(
+        b[0] === Infinity ? (prev + ' 萬以上') : (prev + '–' + b[0] + ' 萬')));
+      lg.appendChild(sp);
+      prev = b[0];
+    });
+    // 房價／地價切換 —— 兩者基準不同，不能混在同一張圖上
+    var pick = el('div', 'pricemode');
+    [['house', '房價'], ['land', '地價']].forEach(function (o) {
+      var lb = el('label');
+      var rd = el('input');
+      rd.type = 'radio';
+      rd.name = 'pricemode';
+      rd.checked = (priceMode === o[0]);
+      rd.addEventListener('change', function () {
+        if (!rd.checked) return;
+        priceMode = o[0];
+        store.set('priceMode', priceMode);
+        refreshParcels();
+      });
+      lb.appendChild(rd);
+      lb.appendChild(document.createTextNode(' ' + o[1]));
+      pick.appendChild(lb);
+    });
+    cb.parentNode.parentNode.insertBefore(pick, $('#landno-note'));
+    cb.parentNode.parentNode.insertBefore(lg, $('#landno-note'));
+
+    cb.addEventListener('change', function () {
+      showPriceMap = cb.checked;
+      store.set('showPriceMap', showPriceMap);
+      // 標行情要先有宗地，順手把地號標示打開
+      if (showPriceMap && !showLandNo) setLandNoLayer(true);
+      else refreshParcels();
+    });
+  }());
 
   // ── 座標查地號 ──────────────────────────────────────────
   //
@@ -1589,16 +1703,29 @@
           '這筆地號在最近 ' + d.seasons.length + ' 季沒有成交紀錄。'));
       }
 
-      if (d.medianPerPing) {
-        var sum = el('div', 'pricestat');
-        sum.appendChild(el('b', null, d.sect + ' 中位數'));
-        sum.appendChild(document.createTextNode(
-          ' ' + wan(d.medianPerPing) + ' 萬/坪　（' + d.sectionCount + ' 筆成交、'
-          + d.sectionParcels + ' 筆地號）'));
-        body.appendChild(sum);
+      function statLine(label, st) {
+        if (!st || !st.median) return;
+        var row = el('div', 'pricestat');
+        row.appendChild(el('b', null, label));
+        row.appendChild(document.createTextNode(
+          ' ' + wan(st.median) + ' 萬/坪　' + windowText(st)));
+        body.appendChild(row);
+      }
+
+      statLine('這筆地號　房價', d.ownHouse);
+      statLine('這筆地號　地價', d.ownLand);
+      statLine(d.sect + '　房價中位數', d.house);
+      statLine(d.sect + '　地價中位數', d.land);
+
+      if (d.house.median || d.land.median) {
         body.appendChild(el('p', 'fineprint',
-          '用中位數而不是平均 —— 一兩筆特別高或特別低的成交（親友間交易、'
-          + '含車位或裝潢）會把平均值拉走。'));
+          '房價與地價分開算：純土地交易是「每坪地價」，房地交易是「每坪房價」，'
+          + '兩者基準不同，混在一起會得出一個誰都不是的數字。'
+          + '只取最近一年的成交 —— 這兩年變動很大，把兩年混著算會失真；'
+          + '樣本不足三筆時才放寬到全部，括號裡會標明。'
+          + '用中位數而不是平均，是因為一兩筆親友間交易或含車位裝潢的成交'
+          + '會把平均值拉走。整段共 ' + d.sectionCount + ' 筆成交、'
+          + d.sectionParcels + ' 筆地號。'));
       }
 
       if (d.recent && d.recent.length) {
@@ -1619,6 +1746,20 @@
       body.textContent = '';
       body.appendChild(el('p', 'fineprint', '讀取成交資料失敗：' + (e.message || e)));
     });
+  }
+
+
+  // 講清楚這個數字是用哪個區間、幾筆算的 —— 不然「中位數」三個字會被
+  // 當成鐵板一塊的事實
+  function windowText(st) {
+    if (!st || !st.n) return '';
+    var when = st.newest
+      ? ('至 ' + Math.floor(st.newest / 100) + '年'
+         + ('0' + (st.newest % 100)).slice(-2) + '月')
+      : '';
+    return st.months
+      ? '（近一年 ' + st.n + ' 筆，' + when + '）'
+      : '（近一年不足三筆，改用全部 ' + st.n + ' 筆，' + when + '）';
   }
 
   function wan(perPing) {

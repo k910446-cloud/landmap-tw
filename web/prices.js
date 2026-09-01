@@ -39,6 +39,52 @@
     return pad(m[1]) + pad(m[2] || 0);
   }
 
+
+  /* 行情要看「近期」而不是「兩年平均」。
+   *
+   * 房價在這兩年變動很大 —— 苗栗大同段 113 年 3 月約 20 萬/坪，
+   * 114 年 7 月已經 34 萬。把兩年混在一起算中位數會低估現況。
+   * 所以預設只取最近 12 個月；若樣本少於 3 筆才放寬到全部，
+   * 並且一定回報實際用了哪個區間與幾筆，不要讓人以為是同一回事。
+   */
+  var RECENT_MONTHS = 12;
+  var MIN_SAMPLES = 3;
+
+  function shiftYm(ym, months) {
+    var y = Math.floor(ym / 100), m = ym % 100;
+    var t = y * 12 + (m - 1) + months;
+    return Math.floor(t / 12) * 100 + (t % 12) + 1;
+  }
+
+  function medianOf(values) {
+    if (!values.length) return 0;
+    var v = values.slice().sort(function (a, b) { return a - b; });
+    return v.length % 2 ? v[(v.length - 1) / 2]
+      : Math.round((v[v.length / 2 - 1] + v[v.length / 2]) / 2);
+  }
+
+  // 交易標的：0=土地 1=房地 2=建物 3=車位 4=房地+車位
+  // 純土地是「每坪地價」，房地是「每坪房價」，兩者基準完全不同，
+  // 混在一起算中位數會得出一個誰都不是的數字。
+  var LAND_KINDS = [0];
+  var HOUSE_KINDS = [1, 2, 4];
+
+  function recentMedian(rows, kinds) {
+    var units = rows.filter(function (r) {
+      return r[2] > 0 && (!kinds || kinds.indexOf(r[4]) >= 0);
+    });
+    if (!units.length) return { median: 0, n: 0, months: 0 };
+    var newest = units.reduce(function (a, r) { return Math.max(a, r[0]); }, 0);
+    var cut = shiftYm(newest, -RECENT_MONTHS + 1);
+    var recent = units.filter(function (r) { return r[0] >= cut; });
+    if (recent.length >= MIN_SAMPLES) {
+      return { median: medianOf(recent.map(function (r) { return r[2]; })),
+               n: recent.length, months: RECENT_MONTHS, newest: newest };
+    }
+    return { median: medianOf(units.map(function (r) { return r[2]; })),
+             n: units.length, months: 0, newest: newest };
+  }
+
   function decorate(meta, rows) {
     return (rows || []).map(function (r) {
       var ym = r[0];
@@ -79,21 +125,19 @@
       Object.keys(sec).forEach(function (k) {
         (sec[k] || []).forEach(function (r) { all.push(r); });
       });
-      var units = all.map(function (r) { return r[2]; })
-        .filter(function (v) { return v > 0; })
-        .sort(function (a, b) { return a - b; });
-      var median = units.length
-        ? (units.length % 2 ? units[(units.length - 1) / 2]
-            : Math.round((units[units.length / 2 - 1] + units[units.length / 2]) / 2))
-        : 0;
+      var landStat = recentMedian(all, LAND_KINDS);
+      var houseStat = recentMedian(all, HOUSE_KINDS);
 
       return {
         status: 'ok', county: county, sect: sect,
         seasons: meta.seasons, source: meta.source, licence: meta.licence,
         own: own,
+        ownLand: recentMedian((eight && sec[eight]) || [], LAND_KINDS),
+        ownHouse: recentMedian((eight && sec[eight]) || [], HOUSE_KINDS),
         sectionCount: all.length,
         sectionParcels: Object.keys(sec).length,
-        medianPerPing: median,
+        land: landStat,
+        house: houseStat,
         recent: decorate(meta, all.slice().sort(function (a, b) { return b[0] - a[0]; }).slice(0, 8))
       };
     }).catch(function (e) {
@@ -105,5 +149,25 @@
     });
   }
 
-  g.Prices = { query: query, toEight: toEight };
+
+  /* 給地圖圖層用：一次拿整段的「每筆地號近期單價中位數」。
+   *
+   * 逐筆去問會發出成百上千次查詢，所以直接把整個縣市的檔載進來
+   * （最大的新北 4.9 MB，載一次就留著），在前端算好再交給圖層。
+   */
+  function sectionMedians(county, sect, mode) {
+    var kinds = (mode === 'land') ? LAND_KINDS : HOUSE_KINDS;
+    return load(county).then(function (meta) {
+      var sec = (meta.sections || {})[sect];
+      if (!sec) return null;
+      var out = {};
+      Object.keys(sec).forEach(function (no8) {
+        var st = recentMedian(sec[no8], kinds);
+        if (st.median) out[no8] = st.median;
+      });
+      return out;
+    }).catch(function () { return null; });
+  }
+
+  g.Prices = { query: query, toEight: toEight, sectionMedians: sectionMedians };
 })(window);
