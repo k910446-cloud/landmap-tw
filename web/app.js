@@ -1538,15 +1538,38 @@
       var items = parseXML(t).getElementsByTagName('countyItem');
       sel.textContent = '';
       sel.appendChild(new Option('請選擇', ''));
-      Array.prototype.forEach.call(items, function (it) {
-        sel.appendChild(new Option(tagText(it, 'countyname'), tagText(it, 'countycode')));
+
+      /* 國土測繪中心回的順序是代碼順（A 臺北、B 臺中、C 基隆、D 臺南…），
+       * 照抄的話清單會變成臺北、臺中、基隆、臺南、高雄、新北…跳來跳去，
+       * 要找一個縣市得從頭掃。改成公文書慣用的由北到南、東部、離島。
+       * 名單裡沒有的（將來新增或改名）會排在最後，不會被丟掉。
+       */
+      var rows = Array.prototype.map.call(items, function (it) {
+        return { name: tagText(it, 'countyname'), code: tagText(it, 'countycode') };
       });
+      rows.sort(function (a, b) {
+        var ia = COUNTY_ORDER.indexOf(a.name);
+        var ib = COUNTY_ORDER.indexOf(b.name);
+        if (ia < 0) ia = COUNTY_ORDER.length;
+        if (ib < 0) ib = COUNTY_ORDER.length;
+        return ia - ib || a.name.localeCompare(b.name, 'zh-Hant');
+      });
+      rows.forEach(function (r) { sel.appendChild(new Option(r.name, r.code)); });
     }).catch(function (e) {
       sel.textContent = '';
       sel.appendChild(new Option('載入失敗：' + e.message, ''));
       countiesLoaded = false;
     });
   }
+
+  // 縣市的慣用排序：北 → 中 → 南 → 東 → 離島
+  var COUNTY_ORDER = [
+    '基隆市', '臺北市', '新北市', '桃園市', '新竹市', '新竹縣', '苗栗縣',
+    '臺中市', '彰化縣', '南投縣', '雲林縣',
+    '嘉義市', '嘉義縣', '臺南市', '高雄市', '屏東縣',
+    '宜蘭縣', '花蓮縣', '臺東縣',
+    '澎湖縣', '金門縣', '連江縣'
+  ];
 
   $('#sel-county').addEventListener('change', function () {
     var c = this.value;
