@@ -247,19 +247,43 @@
       });
   }
 
-  // 這一段有哪些建案（只有預售屋的資料帶建案名稱）
+  // 八碼地號 → 人看的寫法：08800000 → 880、08800001 → 880-1
+  function eightToHuman(no8) {
+    var m = parseInt(String(no8).slice(0, 4), 10);
+    var c = parseInt(String(no8).slice(4), 10);
+    return c ? (m + '-' + c) : String(m);
+  }
+
+  /* 這一段有哪些建案，以及各自坐落在哪幾筆地號。
+   *
+   * 記下地號是為了讓使用者點建案名稱就能跳到它的位置 ——
+   * 一個建案的基地可能跨好幾筆地號，成交筆數最多的那筆通常就是主基地。
+   */
   function projectSummary(meta, sec) {
-    var names = {};
+    var byName = {};
     Object.keys(sec).forEach(function (no8) {
       sec[no8].forEach(function (r) {
-        if (r[7] != null && r[7] >= 0) {
-          var nm = (meta.projects || [])[r[7]];
-          if (nm) names[nm] = (names[nm] || 0) + 1;
-        }
+        if (r[7] == null || r[7] < 0) return;
+        var nm = (meta.projects || [])[r[7]];
+        if (!nm) return;
+        var e = byName[nm] || (byName[nm] = { count: 0, parcels: {} });
+        e.count++;
+        e.parcels[no8] = (e.parcels[no8] || 0) + 1;
       });
     });
-    return Object.keys(names).sort(function (a, b) { return names[b] - names[a]; })
-      .map(function (nm) { return { name: nm, count: names[nm] }; });
+    return Object.keys(byName)
+      .sort(function (a, b) { return byName[b].count - byName[a].count; })
+      .map(function (nm) {
+        var e = byName[nm];
+        var list = Object.keys(e.parcels)
+          .sort(function (a, b) { return e.parcels[b] - e.parcels[a]; });
+        return {
+          name: nm, count: e.count,
+          landNo: eightToHuman(list[0]),
+          parcelCount: list.length,
+          landNos: list.map(eightToHuman)
+        };
+      });
   }
 
   function query(county, sect, landNo) {
@@ -337,5 +361,5 @@
     }).catch(function () { return null; });
   }
 
-  g.Prices = { query: query, toEight: toEight, sectionMedians: sectionMedians };
+  g.Prices = { query: query, toEight: toEight, eightToHuman: eightToHuman, sectionMedians: sectionMedians };
 })(window);

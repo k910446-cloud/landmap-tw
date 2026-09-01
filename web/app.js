@@ -1722,13 +1722,26 @@
         var pj = el('div', 'pricestat');
         pj.appendChild(el('b', null, '這一段的建案'));
         var wrap = el('span', 'projlist');
-        d.projects.slice(0, 12).forEach(function (p2) {
-          wrap.appendChild(el('span', 'projname', p2.name + '（' + p2.count + '）'));
+        d.projects.slice(0, 20).forEach(function (p2) {
+          var b = el('button', 'projname', p2.name + '（' + p2.count + '）');
+          b.type = 'button';
+          b.title = p2.name + '　' + d.sect + ' ' + p2.landNo + '地號'
+            + (p2.parcelCount > 1 ? '　共 ' + p2.parcelCount + ' 筆地號' : '')
+            + '　點一下跳到位置';
+          b.addEventListener('click', function () {
+            // 用成交筆數最多的那筆地號當主基地
+            findLandNo(county, d.sect, p2.landNo, null);
+            hint('前往建案「' + p2.name + '」（' + d.sect + ' ' + p2.landNo + '地號'
+              + (p2.parcelCount > 1 ? '，基地共 ' + p2.parcelCount + ' 筆' : '') + '）',
+              5000);
+          });
+          wrap.appendChild(b);
         });
         pj.appendChild(wrap);
         body.appendChild(pj);
         body.appendChild(el('p', 'fineprint',
-          '建案名稱只有預售屋的資料才有 —— 成屋的實價登錄沒有這個欄位，'
+          '點建案名稱可以跳到它的位置（用成交筆數最多的那筆地號當主基地）。'
+          + '建案名稱只有預售屋的資料才有 —— 成屋的實價登錄沒有這個欄位，'
           + '所以已完工的社區查不到名字，這是資料本身的限制。'));
       }
 

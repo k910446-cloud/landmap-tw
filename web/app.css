@@ -344,3 +344,6 @@ dd{margin:0;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
 .trendbar{width:16px;background:var(--brand-2);border-radius:3px 3px 0 0}
 .trendval{font-size:10px;color:var(--ink-2)}
 .trendyear{font-size:10px;color:var(--ink-3)}
+button.projname{cursor:pointer;font-family:inherit}
+button.projname:hover{background:#dceafb;border-color:#7ab0e0}
+button.projname:active{transform:translateY(1px)}
