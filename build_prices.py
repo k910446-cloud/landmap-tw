@@ -30,10 +30,17 @@
 對得到地號 —— 租賃申報多半只有門牌沒有地號。收進來會得到一份不具
 代表性的樣本，比沒有更糟。
 
+只留最近十年
+------------
+成交資料是累積的：每季發佈一次，不設上限的話收錄範圍會逐年變長，
+輸出檔與原始檔都會無限長大。這裡固定只留最近 KEEP_SEASONS 季（十年），
+超出的季別會從 data/lvr/ 刪掉，輸出也不會再包含。
+
 用法
 ----
-    python build_prices.py                 # data/lvr/ 裡所有已下載的季別
+    python build_prices.py                 # 最近十年（會清掉更舊的原始檔）
     python build_prices.py --seasons 8     # 只用最近 8 季
+    python build_prices.py --keep 0        # 不清理，保留全部原始檔
     python build_prices.py --county 苗栗縣
 """
 
@@ -74,6 +81,10 @@ COUNTY_CODE = {
 KIND = {"土地": 0, "房地(土地+建物)": 1, "建物": 2, "車位": 3,
         "房地(土地+建物)+車位": 4}
 PRESALE_KIND = 5
+
+# 只收錄最近十年（40 季）。沒有上限的話，收錄範圍會隨時間逐年變長，
+# 輸出檔跟著變大，而超過十年的成交對「現在的行情」也沒有參考價值。
+KEEP_SEASONS = 40
 
 
 def seasons_back(n):
@@ -346,6 +357,8 @@ def main():
     ap.add_argument("--seasons", type=int, default=0,
                     help="往回取幾季（0＝用 data/lvr/ 裡已下載的全部）")
     ap.add_argument("--county", action="append", help="只輸出指定縣市")
+    ap.add_argument("--keep", type=int, default=KEEP_SEASONS,
+                    help="保留幾季的原始檔（0＝不清理，預設 %d）" % KEEP_SEASONS)
     args = ap.parse_args()
 
     if args.seasons:
@@ -358,6 +371,17 @@ def main():
                  os.path.join(CACHE_DIR, f)) > 100000),
             key=lambda t: (int(t.split("S")[0]), int(t.split("S")[1])),
             reverse=True) if os.path.isdir(CACHE_DIR) else []
+
+    if args.keep and len(want) > args.keep:
+        drop = want[args.keep:]
+        want = want[:args.keep]
+        print("只留最近 %d 季，捨棄 %d 季：%s" % (args.keep, len(drop), "、".join(drop)))
+        for season in drop:
+            path = os.path.join(CACHE_DIR, "%s.zip" % season)
+            if os.path.isfile(path):
+                size = os.path.getsize(path)
+                os.remove(path)
+                print("  刪除原始檔 %s（%.1f MB）" % (season, size / 1e6))
     store = {}
     projects = {}
     used = []
@@ -382,6 +406,19 @@ def main():
         return
 
     os.makedirs(OUT_DIR, exist_ok=True)
+
+    # 清掉這次不再產生的檔案 —— 例如換過輸出格式、或某個縣市沒有資料了。
+    # 留著只會讓網站帶著一份永遠不會更新的舊資料。
+    keep_names = set()
+    for county in store:
+        keep_names.add("%s.bin" % county)
+        keep_names.add("%s.idx.json" % county)
+    if not args.county:          # 只轉單一縣市時不要動到其他縣市的輸出
+        for f in os.listdir(OUT_DIR):
+            if f not in keep_names:
+                os.remove(os.path.join(OUT_DIR, f))
+                print("移除不再產生的輸出檔 %s" % f)
+
     total_bin = total_idx = total_deals = 0
     for county, sections in sorted(store.items()):
         blob = bytearray()
