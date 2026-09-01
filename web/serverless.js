@@ -213,18 +213,22 @@
       licence: '各該市政府開放資料授權'
     };
 
-    // 非都市分區與編定需要在伺服器端解析 shapefile，靜態版做不到
-    var noBackend = ['非都市土地使用分區', '非都市土地使用地類別（編定）'].map(function (t) {
-      return {
-        key: 'nurban', title: t, status: 'unavailable',
-        message: '靜態版無法查詢（需要後端解析圖資）。用本機完整版可查全國 18 縣市。'
-      };
+    // 非都市分區與編定：讀 build_nurban.py 事先轉好的圖資，
+    // 由瀏覽器自己做點在多邊形內判斷（見 nurban.js）
+    var nurban = NUrban.datasets.map(function (k) {
+      return NUrban.query(k, county, lat, lon);
     });
+
+    function done() {
+      return Promise.all(nurban).then(function (rows) {
+        return { layers: [urbanItem].concat(rows) };
+      });
+    }
 
     if (!cfg) {
       urbanItem.status = 'unavailable';
       urbanItem.message = '靜態版沒有 ' + (county || '此縣市') + ' 的都市計畫服務';
-      return Promise.resolve({ layers: [urbanItem].concat(noBackend) });
+      return done();
     }
 
     var xy = projectPoint(cfg, lon, lat);
@@ -255,11 +259,11 @@
           return (v2 && v2 !== value) ? [pair[0], v2] : null;
         }).filter(Boolean);
       }
-      return { layers: [urbanItem].concat(noBackend) };
+      return done();
     }).catch(function (e) {
       urbanItem.status = 'error';
       urbanItem.message = county + ' 的查詢服務目前無法使用：' + (e.message || e);
-      return { layers: [urbanItem].concat(noBackend) };
+      return done();
     });
   }
 
