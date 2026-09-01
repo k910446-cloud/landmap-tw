@@ -1,7 +1,8 @@
-/* 非都市土地圖層 —— 靜態版（GitHub Pages）用的查詢。
+/* 預轉圖層 —— 靜態版（GitHub Pages）用的查詢。
  *
- * 本機完整版由 Python 在伺服器端解析 shapefile；靜態版沒有後端，
- * 改讀 build_nurban.py 事先轉好的檔：
+ * 有些圖層只有 shapefile 沒有即時服務：非都市土地的分區與編定，
+ * 以及新北、高雄的都市計畫分區。本機完整版由 Python 在伺服器端解析，
+ * 靜態版沒有後端，改讀 build_layers.py 事先轉好的檔：
  *
  *   nurban/<圖層>_<縣市>.idx.json   幾 KB 的索引：每個方格在 .bin 裡的位移
  *   nurban/<圖層>_<縣市>.bin        全縣市的多邊形，依方格排好
@@ -56,6 +57,13 @@
     var n = this.uvarint();
     return (n % 2) ? -(n + 1) / 2 : n / 2;
   };
+
+  // 索引裡的屬性可能是字串（只有名稱）或物件（還有代碼、建蔽率等），
+  // 這裡統一成物件，呼叫端就不必分兩種情況處理。
+  function normalise(a) {
+    if (a == null) return { v: '' };
+    return (typeof a === 'string') ? { v: a } : a;
+  }
 
   // 一個方格：[{ v: 值編號, rings: [[x,y,x,y,...], ...] }, ...]
   function decodeCell(bytes, meta, cx, cy) {
@@ -148,14 +156,20 @@
         if (!best) {
           return {
             key: ds, title: meta.title, status: 'no-feature',
-            message: '此點不在非都市土地範圍內（多半代表它屬於都市計畫區或國家公園）'
+            message: (ds === 'urban_zone')
+              ? '此點不在都市計畫範圍內（可能屬非都市土地）。'
+              : '此點不在非都市土地範圍內（多半代表它屬於都市計畫區或國家公園）'
           };
         }
+        var a = normalise(meta.values[best.v]);
         return {
           key: ds, title: meta.title, status: 'ok',
-          value: meta.values[best.v] || '（屬性無名稱）',
+          value: a.v || '（屬性無名稱）',
+          code: (a.c && a.c !== a.v) ? a.c : null,
+          extras: a.e || [],
           source: meta.source + '（瀏覽器直接讀取預轉圖資）',
-          licence: meta.licence
+          licence: meta.licence,
+          sourceUrl: meta.sourceUrl || null
         };
       });
     }).catch(function (e) {
@@ -174,11 +188,14 @@
 
   var DS_TITLE = {
     nurban_zone: '非都市土地使用分區',
-    nurban_desig: '非都市土地使用地類別（編定）'
+    nurban_desig: '非都市土地使用地類別（編定）',
+    urban_zone: '都市計畫使用分區'
   };
 
   g.NUrban = {
     query: query,
+    // 有預轉圖資的都市計畫縣市（其餘走即時服務，資料比較新）
+    urbanCounties: ['新北市', '高雄市'],
     datasets: ['nurban_zone', 'nurban_desig'],
     title: function (ds) { return DS_TITLE[ds] || ds; }
   };

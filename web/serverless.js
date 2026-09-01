@@ -236,7 +236,7 @@
       licence: '各該市政府開放資料授權'
     };
 
-    // 非都市分區與編定：讀 build_nurban.py 事先轉好的圖資，
+    // 非都市分區與編定：讀 build_layers.py 事先轉好的圖資，
     // 由瀏覽器自己做點在多邊形內判斷（見 nurban.js）
     var nurban = NUrban.datasets.map(function (k) {
       return NUrban.query(k, county, lat, lon);
@@ -245,6 +245,16 @@
     function done() {
       return Promise.all(nurban).then(function (rows) {
         return { layers: [urbanItem].concat(rows) };
+      });
+    }
+
+    // 新北與高雄沒有即時服務，政府是發佈檔案 —— 改讀預轉圖資。
+    // 其餘縣市走即時服務，資料比較新，預轉的只是某一時點的快照。
+    if (!cfg && NUrban.urbanCounties.indexOf(county) >= 0) {
+      return NUrban.query('urban_zone', county, lat, lon).then(function (r) {
+        return Promise.all(nurban).then(function (rows) {
+          return { layers: [r].concat(rows) };
+        });
       });
     }
 
