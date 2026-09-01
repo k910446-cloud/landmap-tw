@@ -79,11 +79,39 @@
     return c ? (m + '-' + c) : String(m);
   }
 
+  // 有些縣市的服務不送 CORS 標頭，瀏覽器不准直接讀，得繞自己的代理。
+  // 沒設定代理時 needsProxy 的縣市會被擋在 guard() 那裡，不會走到這裡。
+  function endpoint(cfg, qs) {
+    var url = cfg.url + '?' + qs;
+    if (cfg.needsProxy && window.PROXY_URL) {
+      // 代理只看 u 參數，路徑不拘 —— 這樣同一段程式也能指向本機版的
+      // /proxy 端點，方便在部署 Worker 之前先驗證整條路徑
+      var base = window.PROXY_URL.replace(/\/+$/, '');
+      return base + (base.indexOf('?') >= 0 ? '&' : '?') + 'u=' + encodeURIComponent(url);
+    }
+    return url;
+  }
+
+  // 需要代理卻沒設定時，講清楚是什麼情況、要怎麼解決
+  function guard(cfg, county, title) {
+    if (!cfg) {
+      return { status: 'unavailable', county: county,
+        message: '線上版沒有 ' + (county || '此縣市') + ' 的' + title };
+    }
+    if (cfg.needsProxy && !window.PROXY_URL) {
+      return { status: 'unavailable', county: county,
+        message: county + ' 的服務不允許瀏覽器直接連線（沒有送 CORS 標頭）。'
+          + '要在線上版查這個縣市，需要自備一支代理 —— '
+          + '原始碼與部署步驟在專案的 worker/ 資料夾。本機完整版不受影響。' };
+    }
+    return null;
+  }
+
   function esriQuery(cfg, params) {
     var qs = Object.keys(params).map(function (k) {
       return encodeURIComponent(k) + '=' + encodeURIComponent(params[k]);
     }).join('&');
-    return fetch(cfg.url + '?' + qs).then(function (r) {
+    return fetch(endpoint(cfg, qs)).then(function (r) {
       if (!r.ok) throw new Error('HTTP ' + r.status);
       return r.json();
     }).then(function (d) {
@@ -108,13 +136,8 @@
   // ── 座標查地號 ──────────────────────────────────────────
   function cadastre(lat, lon, county, sectHint) {
     var cfg = (SERVICES.cadastre || {})[county];
-    if (!cfg) {
-      return Promise.resolve({
-        status: 'unavailable', county: county,
-        message: '靜態版沒有 ' + (county || '此縣市') + ' 的地籍服務'
-          + '（該縣市的服務不允許瀏覽器直接連線）'
-      });
-    }
+    var stop = guard(cfg, county, '地籍服務');
+    if (stop) return Promise.resolve(stop);
     var xy = projectPoint(cfg, lon, lat);
     return esriQuery(cfg, {
       f: 'json',
@@ -163,10 +186,8 @@
   function parcels(county, w, s, e, n, limit) {
     limit = limit || 1200;
     var cfg = (SERVICES.cadastre || {})[county];
-    if (!cfg) {
-      return Promise.resolve({ status: 'unavailable', county: county,
-        message: '靜態版沒有 ' + (county || '此縣市') + ' 的地籍服務' });
-    }
+    var stop = guard(cfg, county, '地籍服務');
+    if (stop) return Promise.resolve(stop);
     var a = projectPoint(cfg, w, s), b = projectPoint(cfg, e, n);
     return esriQuery(cfg, {
       f: 'json',
@@ -225,9 +246,10 @@
       });
     }
 
-    if (!cfg) {
-      urbanItem.status = 'unavailable';
-      urbanItem.message = '靜態版沒有 ' + (county || '此縣市') + ' 的都市計畫服務';
+    var stop = guard(cfg, county, '都市計畫服務');
+    if (stop) {
+      urbanItem.status = stop.status;
+      urbanItem.message = stop.message;
       return done();
     }
 

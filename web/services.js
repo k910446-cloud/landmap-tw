@@ -116,6 +116,30 @@ window.SERVICES = {
       ],
       "source": "新竹縣政府 智慧圖資雲 公開圖服務"
     },
+    "苗栗縣": {
+      "url": "https://ailand.miaoli.gov.tw/server/rest/services/Dynamic/LandNo/MapServer/0/query",
+      "wkid": 102443,
+      "sect": [
+        "KCNT"
+      ],
+      "sectcode": [
+        "AA48"
+      ],
+      "landno": [
+        "LandNo"
+      ],
+      "landno8": [
+        "AA49"
+      ],
+      "area": [
+        "Shape.STArea()"
+      ],
+      "office": [
+        "UNIT"
+      ],
+      "source": "苗栗縣政府 栗智網 公開圖服務",
+      "needsProxy": true
+    },
     "彰化縣": {
       "url": "https://urbangis.chcg.gov.tw/arcgis/rest/services/CHCGMap/LAND/MapServer/0/query",
       "wkid": 102443,
@@ -156,6 +180,11 @@ window.SERVICES = {
     "新竹市": {
       "url": "https://urbanmap.hccg.gov.tw/server/rest/services/UrbanPlan/Landuse_NoCache/MapServer/1/query",
       "wkid": 102443
+    },
+    "苗栗縣": {
+      "url": "https://ailand.miaoli.gov.tw/server/rest/services/Dynamic/Urban_Planning/MapServer/0/query",
+      "wkid": 102443,
+      "needsProxy": true
     },
     "臺北市": {
       "url": "https://www.historygis.udd.gov.taipei/arcgis/rest/services/UrbanPlan2/UrbanPlan2/MapServer/2/query",

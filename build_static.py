@@ -33,19 +33,33 @@ def pick(cfg):
     return {k: cfg[k] for k in FIELD_KEYS if k in cfg}
 
 
-def cors_only(mapping):
-    return {c: pick(v) for c, v in mapping.items()
-            if isinstance(v, dict) and v.get("cors")}
+def collect(mapping):
+    """全部縣市都輸出；沒有 CORS 標頭的標記 needsProxy。
+
+    先前只輸出有 CORS 的，等於在產生階段就把苗栗這種縣市剔除掉。
+    但那些服務其實是好的，只差瀏覽器不准直連 —— 只要設定了自己的代理
+    就能用，所以改成一律輸出，由前端依 needsProxy 決定怎麼連。
+    """
+    out = {}
+    for c, v in mapping.items():
+        if not isinstance(v, dict) or not v.get("url"):
+            continue
+        cfg = pick(v)
+        if not v.get("cors"):
+            cfg["needsProxy"] = True
+        out[c] = cfg
+    return out
 
 
 def main():
-    cadastre = cors_only(DS.CADASTRE_COUNTIES)
+    cadastre = collect(DS.CADASTRE_COUNTIES)
 
-    urban = cors_only(DS.DATASETS["urban_zone"]["counties"])
+    urban = collect(DS.DATASETS["urban_zone"]["counties"])
     # 臺北的伺服器模式走下載的 SHP，靜態版改用它的即時服務
     for cty, cfg in DS.URBAN_LIVE_FOR_STATIC.items():
-        if cfg.get("cors"):
-            urban[cty] = pick(cfg)
+        urban[cty] = pick(cfg)
+        if not cfg.get("cors"):
+            urban[cty]["needsProxy"] = True
 
     ds = DS.DATASETS["urban_zone"]
     payload = {
@@ -75,8 +89,16 @@ def main():
         f.write(buf.getvalue())
 
     print("已產生 %s" % os.path.relpath(OUT, BASE_DIR))
-    print("  地籍查詢   %d 縣市：%s" % (len(cadastre), "、".join(sorted(cadastre))))
-    print("  都市計畫   %d 縣市：%s" % (len(urban), "、".join(sorted(urban))))
+    def split(m):
+        direct = sorted(c for c, v in m.items() if not v.get("needsProxy"))
+        viap = sorted(c for c, v in m.items() if v.get("needsProxy"))
+        return direct, viap
+
+    for label, m in (("地籍查詢", cadastre), ("都市計畫", urban)):
+        direct, viap = split(m)
+        print("  %s   直連 %d 縣市：%s" % (label, len(direct), "、".join(direct)))
+        if viap:
+            print("  %s   需代理 %d 縣市：%s" % ("　" * len(label), len(viap), "、".join(viap)))
     print("  非都市分區 靜態版不支援（需要後端解析 shapefile）")
 
 
