@@ -120,30 +120,6 @@
       <div id="overlay-groups"></div>
 
       <div class="card">
-        <h3>自訂圖層</h3>
-        <p class="fineprint" style="margin-top:0">
-          貼上任何 WMTS／XYZ 圖磚網址就多一個圖層。取得
-          <b>都市計畫使用分區</b>（國土管理署城鄉發展分署付費介接服務）或
-          <b>宗地地籍圖</b>（國土測繪中心申請介接）的網址後，加在這裡即可，
-          不必改程式。座標系需為 EPSG:3857。
-        </p>
-        <label class="fld"><span>圖層名稱</span>
-          <input id="cl-name" type="text" placeholder="例：都市計畫使用分區"></label>
-        <label class="fld"><span>圖磚網址範本</span>
-          <input id="cl-url" type="text" spellcheck="false"
-                 placeholder="https://…/{z}/{y}/{x}"></label>
-        <p class="fineprint" style="margin-top:0">
-          用 <code>{z}</code> <code>{x}</code> <code>{y}</code> 代表層級與列欄。
-          國土測繪中心系列的順序是 <code>/{z}/{y}/{x}</code>；
-          一般 XYZ 圖磚是 <code>/{z}/{x}/{y}</code>。
-        </p>
-        <div class="row">
-          <button class="btn primary" id="cl-add">加入圖層</button>
-        </div>
-        <div id="cl-list"></div>
-      </div>
-
-      <div class="card">
         <h3>圖層位置校正</h3>
         <p class="fineprint" style="margin-top:0">
           不同來源的圖資可能有套疊誤差。這裡整體平移疊圖圖層，單位公尺，
@@ -305,7 +281,7 @@
            上面的「資料涵蓋範圍」可以看到目前狀況。</p>
         <p>想一次覆蓋全國，可向國土管理署城鄉發展分署申請
            「全國土地使用分區圖資介接服務」（付費），把 WMTS 網址貼到「圖層」頁的
-           <b>自訂圖層</b>；那是圖磚，看得到界線但點不出名稱。</p>
+           付費介接服務；那是圖磚，看得到界線但點不出名稱。</p>
         <p>另外：當某點查不到非都市分區時，多半就代表<b>它位於都市計畫區內</b>
            ——非都市分區圖涵蓋所有非都市土地，落在外面的就是都市計畫區或國家公園。</p>
       </div>
@@ -321,7 +297,7 @@
            <em>申請介接、綁定網域或 IP</em> 的方式提供；地政司的查詢圖台另有圖形驗證碼保護。
            這個 App 不會去繞過那些機制。到
            <a href="https://maps.nlsc.gov.tw/S09SOA/homePage.action?Language=ZH" target="_blank" rel="noopener">國土測繪圖資服務雲</a>
-           申請核准後，把地籍圖磚網址加到<b>自訂圖層</b>即可。正式謄本請用
+           正式謄本請用
            <a href="https://clir.land.moi.gov.tw/" target="_blank" rel="noopener">全國地政電子謄本系統</a>。</p>
       </div>
       <div class="card">

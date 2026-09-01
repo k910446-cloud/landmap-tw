@@ -437,10 +437,6 @@
       var el2 = state.overlays[k].layer.getContainer && state.overlays[k].layer.getContainer();
       if (el2) el2.style.transform = 'translate(' + px.toFixed(2) + 'px,' + py.toFixed(2) + 'px)';
     });
-    Object.keys(customLayers || {}).forEach(function (k) {
-      var el2 = customLayers[k].getContainer && customLayers[k].getContainer();
-      if (el2) el2.style.transform = 'translate(' + px.toFixed(2) + 'px,' + py.toFixed(2) + 'px)';
-    });
     var lbl = $('#off-val');
     if (lbl) lbl.textContent = '東西 ' + offset.x.toFixed(1) + ' m　南北 ' + offset.y.toFixed(1) + ' m';
   }
@@ -503,84 +499,6 @@
       coverageLoaded = false;
     });
   }
-
-  // ── 自訂圖層 ────────────────────────────────────────────
-  //
-  // 都市計畫使用分區與宗地地籍圖都不在免申請的公開圖磚裡；取得授權網址後
-  // 加在這裡就能疊上去，不用改程式。
-
-  state.custom = store.get('custom', []);
-  var customLayers = {};
-
-  function addCustomToMap(c) {
-    if (customLayers[c.id]) return;
-    var l = makeTile(c.url, { opacity: c.opacity == null ? 0.7 : c.opacity, zIndex: 200 });
-    customLayers[c.id] = l;
-    if (c.on !== false) l.addTo(map);
-  }
-
-  function renderCustom() {
-    var host = $('#cl-list');
-    host.textContent = '';
-    if (!state.custom.length) return;
-    state.custom.forEach(function (c, i) {
-      var row = el('div', 'lyr');
-      var head = el('div', 'lyr-head');
-      var cb = el('input');
-      cb.type = 'checkbox';
-      cb.checked = c.on !== false;
-      var lab = el('label', 'lyr-name', c.name);
-      var x = el('button', 'x', '✕');
-      x.title = '移除';
-      head.appendChild(cb); head.appendChild(lab); head.appendChild(x);
-      row.appendChild(head);
-
-      var op = el('div', 'lyr-op');
-      var rg = el('input');
-      rg.type = 'range'; rg.min = 10; rg.max = 100; rg.step = 5;
-      rg.value = Math.round((c.opacity == null ? 0.7 : c.opacity) * 100);
-      var pct = el('span', null, rg.value + '%');
-      op.appendChild(rg); op.appendChild(pct);
-      row.appendChild(op);
-
-      cb.addEventListener('change', function () {
-        c.on = cb.checked;
-        var l = customLayers[c.id];
-        if (l) { if (c.on) l.addTo(map); else map.removeLayer(l); }
-        store.set('custom', state.custom);
-      });
-      rg.addEventListener('input', function () {
-        c.opacity = rg.value / 100;
-        pct.textContent = rg.value + '%';
-        if (customLayers[c.id]) customLayers[c.id].setOpacity(c.opacity);
-      });
-      rg.addEventListener('change', function () { store.set('custom', state.custom); });
-      x.addEventListener('click', function () {
-        if (customLayers[c.id]) { map.removeLayer(customLayers[c.id]); delete customLayers[c.id]; }
-        state.custom.splice(i, 1);
-        store.set('custom', state.custom);
-        renderCustom();
-      });
-      host.appendChild(row);
-    });
-  }
-
-  $('#cl-add').addEventListener('click', function () {
-    var name = $('#cl-name').value.trim();
-    var url = $('#cl-url').value.trim();
-    if (!name || !url) { hint('請填名稱與網址'); return; }
-    if (!/\{z\}/.test(url) || !/\{x\}/.test(url) || !/\{y\}/.test(url)) {
-      hint('網址需含 {z}、{x}、{y} 三個佔位符'); return;
-    }
-    var c = { id: 'c' + Date.now(), name: name, url: url, opacity: 0.7, on: true };
-    state.custom.push(c);
-    store.set('custom', state.custom);
-    addCustomToMap(c);
-    renderCustom();
-    $('#cl-name').value = '';
-    $('#cl-url').value = '';
-    hint('已加入「' + name + '」');
-  });
 
   // ── 點位查詢 ────────────────────────────────────────────
   var pinIcon = L.divIcon({ className: '', html: '<div class="pin"></div>', iconSize: [0, 0] });
@@ -2236,9 +2154,7 @@
   // ── 啟動 ────────────────────────────────────────────────
   buildLayerUI();
   if (showLandNo) setLandNoLayer(true);
-  state.custom.forEach(addCustomToMap);
   applyOffset();
-  renderCustom();
   setBase(state.activeBase);
   setPanel(store.get('panelOpen', window.innerWidth >= 720));
   renderMarks();
