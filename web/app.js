@@ -668,10 +668,101 @@
     return out;
   }
 
+  /* 同一側的小段自動加總。
+   *
+   * 地籍圖形常把一條直線邊切成好幾個節點，逐段標出來會看到
+   * 「0.18 m、0.36 m」這種沒有意義的碎值。實際要看的是「這一側有多長」，
+   * 所以把方向幾乎一致的連續小段併成一條邊。
+   *
+   * 兩道門檻缺一不可：
+   *   單段轉角  相鄰兩段的夾角要小於 TURN_TOL 才算同一側
+   *   累計偏轉  整條併起來的邊相對起始方向不能偏超過 RUN_TOL ——
+   *             否則一連串 8 度的小轉會被併成一條實際彎了 90 度的「直線」
+   */
+  var TURN_TOL = 12;   // 度
+  var RUN_TOL = 20;    // 度
+
+  function segDir(e) {
+    var p = TWD.toTM2(e.a[0], e.a[1]), q = TWD.toTM2(e.b[0], e.b[1]);
+    return Math.atan2(q.y - p.y, q.x - p.x) * 180 / Math.PI;
+  }
+
+  function angDiff(a, b) {
+    var d = Math.abs(a - b) % 360;
+    if (d > 180) d = 360 - d;
+    return d;
+  }
+
+  // 沿著這串小段走到總長一半的位置，標籤放那裡才會在邊的中間
+  function chainMid(segs) {
+    var total = segs.reduce(function (s2, e) { return s2 + e.len; }, 0);
+    var half = total / 2, acc = 0;
+    for (var i = 0; i < segs.length; i++) {
+      if (acc + segs[i].len >= half) {
+        var t = (half - acc) / segs[i].len;
+        return [segs[i].a[0] + (segs[i].b[0] - segs[i].a[0]) * t,
+                segs[i].a[1] + (segs[i].b[1] - segs[i].a[1]) * t];
+      }
+      acc += segs[i].len;
+    }
+    return segs[segs.length - 1].mid;
+  }
+
+  function mergeSides(edges) {
+    var n = edges.length;
+    if (n < 2) return edges.map(function (e) {
+      return { len: e.len, mid: e.mid, parts: 1, a: e.a, b: e.b };
+    });
+
+    var dirs = edges.map(segDir);
+
+    // 從一個「真的是轉角」的地方開始，否則環的接縫會把一條邊切成兩截
+    var start = 0;
+    for (var i = 0; i < n; i++) {
+      if (angDiff(dirs[i], dirs[(i - 1 + n) % n]) > TURN_TOL) { start = i; break; }
+    }
+
+    var sides = [], run = [], runDir = null;
+    for (var k = 0; k < n; k++) {
+      var idx = (start + k) % n;
+      var e = edges[idx], d = dirs[idx];
+      if (run.length
+          && angDiff(d, dirs[(idx - 1 + n) % n]) <= TURN_TOL
+          && angDiff(d, runDir) <= RUN_TOL) {
+        run.push(e);
+      } else {
+        if (run.length) sides.push(run);
+        run = [e];
+        runDir = d;
+      }
+    }
+    if (run.length) sides.push(run);
+
+    return sides.map(function (segs) {
+      return {
+        len: segs.reduce(function (s2, e) { return s2 + e.len; }, 0),
+        mid: chainMid(segs),
+        parts: segs.length,
+        a: segs[0].a,
+        b: segs[segs.length - 1].b
+      };
+    });
+  }
+
+  var mergeEdges = store.get('mergeEdges', true);
+
+  function sidesOf(ring) {
+    var es = edgesOf(ring);
+    return mergeEdges ? mergeSides(es)
+      : es.map(function (e) {
+          return { len: e.len, mid: e.mid, parts: 1, a: e.a, b: e.b };
+        });
+  }
+
   function renderEdges() {
     edgeLayer.clearLayers();
     if (!showEdges || !lastRings || !lastRings.length) return;
-    edgesOf(lastRings[0]).forEach(function (e) {
+    sidesOf(lastRings[0]).forEach(function (e) {
       if (e.len < 1.5) return;                // 太短的邊不標，免得糊成一團
       L.marker(e.mid, {
         interactive: false,
@@ -687,7 +778,7 @@
 
   function renderEdgeList(host) {
     if (!lastRings || !lastRings.length) return;
-    var es = edgesOf(lastRings[0]);
+    var es = sidesOf(lastRings[0]);
     if (!es.length) return;
     var total = es.reduce(function (s2, e) { return s2 + e.len; }, 0);
 
@@ -705,6 +796,22 @@
     lab.appendChild(cb);
     lab.appendChild(document.createTextNode(' 在圖上標各邊長度'));
     head.appendChild(lab);
+
+    var lab2 = el('label', 'edgetoggle');
+    var cb2 = el('input');
+    cb2.type = 'checkbox';
+    cb2.checked = mergeEdges;
+    cb2.addEventListener('change', function () {
+      mergeEdges = cb2.checked;
+      store.set('mergeEdges', mergeEdges);
+      renderEdges();
+      var host2 = $('#cadastre');
+      var oldBox = host2.querySelector('.edgebox');
+      if (oldBox) { oldBox.remove(); renderEdgeList(host2); }
+    });
+    lab2.appendChild(cb2);
+    lab2.appendChild(document.createTextNode(' 同一側自動加總'));
+    head.appendChild(lab2);
     head.appendChild(el('span', 'edgetotal', '周長 ' + total.toFixed(2) + ' m'));
     box.appendChild(head);
 
@@ -713,10 +820,13 @@
       var row = el('span', 'edgeitem');
       row.appendChild(el('b', null, 'L' + (i + 1)));
       row.appendChild(document.createTextNode(' ' + e.len.toFixed(2) + ' m'));
+      if (e.parts > 1) row.appendChild(el('i', 'edgeparts', e.parts + ' 段'));
       list.appendChild(row);
     });
     box.appendChild(list);
     box.appendChild(el('p', 'fineprint', '邊長依宗地圖形節點計算（TWD97 二度分帶）。'
+      + (mergeEdges ? '「同一側自動加總」會把方向幾乎一致的連續節點併成一條邊，'
+          + '括號裡是併了幾段；取消勾選可看原始的每一節點。' : '')
       + '圖形節點與實地界址可能有測量誤差，正式尺寸請以地籍圖謄本或鑑界成果為準。'));
     host.appendChild(box);
   }
