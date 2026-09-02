@@ -1941,6 +1941,52 @@
     if (map.hasLayer(foundLayer)) map.removeLayer(foundLayer);
   }
 
+
+  /* 找一個保證落在這個環裡面的點。
+   *
+   * 原本用外框中心，但宗地常常是 L 形或細長條，外框中心會落在外面 ——
+   * 新竹市中寮段 701 就是這樣，結果點位查詢查到隔壁的 700，
+   * 畫面上框的是 701、資料卻是 700。這種錯不會當掉也不會報錯，
+   * 只會安靜地顯示錯的地號。
+   *
+   * 作法：外框中心在裡面就用它；不在的話，沿著中心緯度拉一條水平線，
+   * 取與邊界所有交點之間「最長的那一段」的中點 —— 那一定在多邊形內。
+   */
+  function pointInsideRing(ring) {
+    var las = ring.map(function (p) { return p[0]; });
+    var los = ring.map(function (p) { return p[1]; });
+    var la = (Math.min.apply(null, las) + Math.max.apply(null, las)) / 2;
+    var lo = (Math.min.apply(null, los) + Math.max.apply(null, los)) / 2;
+
+    function inside(lat, lon) {
+      var ins = false;
+      for (var i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+        var yi = ring[i][0], xi = ring[i][1];
+        var yj = ring[j][0], xj = ring[j][1];
+        if ((yi > lat) !== (yj > lat)
+            && lon < (xj - xi) * (lat - yi) / (yj - yi) + xi) ins = !ins;
+      }
+      return ins;
+    }
+    if (inside(la, lo)) return L.latLng(la, lo);
+
+    var xs = [];
+    for (var i2 = 0, j2 = ring.length - 1; i2 < ring.length; j2 = i2++) {
+      var yi2 = ring[i2][0], xi2 = ring[i2][1];
+      var yj2 = ring[j2][0], xj2 = ring[j2][1];
+      if ((yi2 > la) !== (yj2 > la)) {
+        xs.push((xj2 - xi2) * (la - yi2) / (yj2 - yi2) + xi2);
+      }
+    }
+    xs.sort(function (a, b) { return a - b; });
+    var best = null, span = -1;
+    for (var k = 0; k + 1 < xs.length; k += 2) {
+      var w = xs[k + 1] - xs[k];
+      if (w > span) { span = w; best = (xs[k] + xs[k + 1]) / 2; }
+    }
+    return L.latLng(la, best === null ? lo : best);
+  }
+
   function findLandNo(county, sect, no, msgEl) {
     var seq = ++landnoSeq;
     function say(t) { if (msgEl) msgEl.textContent = t; }
@@ -1977,8 +2023,11 @@
       var label = [d.sect || sect, (d.landNo || no) + '地號'].join(' ');
       if (bounds) {
         map.fitBounds(bounds, { maxZoom: 19, padding: [40, 40] });
-        // 順手把這一點也當成查詢點，右邊面板就會帶出分區、法條等資訊
-        setPoint(bounds.getCenter());
+        // 順手把這一點也當成查詢點，右邊面板就會帶出分區、法條等資訊。
+        // 取點一定要落在這筆宗地內，否則會查到隔壁那筆。
+        var inner = (d.rings && d.rings.length)
+          ? pointInsideRing(d.rings[0]) : bounds.getCenter();
+        setPoint(inner);
       }
       var extra = d.areaPing ? ('　' + d.areaM2 + ' m²（約 ' + d.areaPing + ' 坪）') : '';
       say('已定位：' + label + extra
