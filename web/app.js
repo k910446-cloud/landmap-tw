@@ -493,8 +493,18 @@
     el.style.transform = bearing ? 'rotate(' + bearing + 'deg)' : '';
     el.style.setProperty('--bearing', bearing + 'deg');
 
+    /* 控制項不放在會旋轉的容器裡。
+     *
+     * 先前是把它反向轉回來，但容器為了覆蓋四角會放大並位移，
+     * 控制項在容器的角落，反轉之後就落到畫面中間去了。
+     * 直接把整個控制項容器搬到 body 底下當固定定位的浮層，
+     * 就完全不受旋轉與位移影響 —— Leaflet 不在意它掛在哪。
+     */
     var cc = el.querySelector('.leaflet-control-container');
-    if (cc) cc.style.transform = bearing ? 'rotate(' + (-bearing) + 'deg)' : '';
+    if (cc) {
+      cc.classList.add('detached-controls');
+      document.body.appendChild(cc);
+    }
 
     /* 容器尺寸變了要讓 Leaflet 重新量，否則它會照舊尺寸出圖 ——
      * 畫面上就是「中間一小塊有地圖、四周全黑」。
@@ -503,10 +513,15 @@
      * 有可能一直不執行。這裡直接量一次（樣式已寫入，讀尺寸會強制重排），
      * 再補一次延遲的，涵蓋樣式套用得比較慢的情況。
      */
-    map.invalidateSize({ animate: false, pan: false });
-    setTimeout(function () {
+    // 量不到尺寸時千萬不要叫 invalidateSize —— Leaflet 會把 0 記下來，
+    // 之後就照 0×0 出圖，畫面上是「只有一小塊有地圖、其餘全黑」。
+    // 等 ResizeObserver 通知有尺寸了再量。
+    if (!pendingBearing) {
       map.invalidateSize({ animate: false, pan: false });
-    }, 60);
+      setTimeout(function () {
+        if (!pendingBearing) map.invalidateSize({ animate: false, pan: false });
+      }, 60);
+    }
     var nb = $('#btn-bearing');
     if (nb) {
       nb.querySelector('.needle').style.transform = 'rotate(' + (-bearing) + 'deg)';
@@ -2278,6 +2293,109 @@
   });
 
 
+
+
+  /* 直接在地圖上轉動 —— 跟 Google 地圖一樣的操作。
+   *
+   *   手機：兩指旋轉
+   *   電腦：按住 Ctrl（或用滑鼠右鍵）拖曳
+   *
+   * 只有按鈕可以轉的話，實際用起來會覺得「轉不了」——
+   * 手上已經在地圖上比劃了，還要跑去按另一個地方很不順。
+   */
+  (function mapRotateGestures() {
+    var el = map.getContainer();
+
+    // ── 兩指旋轉 ──
+    var pts = {};           // 目前按著的觸控點
+    var baseAngle = null, baseBearing = 0, rotating = false;
+
+    function twoFingerAngle() {
+      var ids = Object.keys(pts);
+      if (ids.length < 2) return null;
+      var a = pts[ids[0]], b = pts[ids[1]];
+      return Math.atan2(b.y - a.y, b.x - a.x) * 180 / Math.PI;
+    }
+
+    el.addEventListener('touchstart', function (e) {
+      for (var i = 0; i < e.touches.length; i++) {
+        var t = e.touches[i];
+        pts[t.identifier] = { x: t.clientX, y: t.clientY };
+      }
+      baseAngle = twoFingerAngle();
+      baseBearing = bearing;
+      rotating = false;
+    }, { passive: true });
+
+    el.addEventListener('touchmove', function (e) {
+      for (var i = 0; i < e.touches.length; i++) {
+        var t = e.touches[i];
+        if (pts[t.identifier]) { pts[t.identifier].x = t.clientX; pts[t.identifier].y = t.clientY; }
+      }
+      var now = twoFingerAngle();
+      if (now === null || baseAngle === null) return;
+      var diff = now - baseAngle;
+      while (diff > 180) diff -= 360;
+      while (diff < -180) diff += 360;
+      // 轉超過 8 度才開始，避免縮放時手指些微轉動就把地圖轉歪
+      if (!rotating && Math.abs(diff) < 8) return;
+      rotating = true;
+      applyBearing(baseBearing + diff, { silent: true });
+    }, { passive: true });
+
+    function endTouch(e) {
+      for (var i = 0; i < e.changedTouches.length; i++) {
+        delete pts[e.changedTouches[i].identifier];
+      }
+      if (Object.keys(pts).length < 2) {
+        if (rotating) store.set('bearing', bearing);
+        baseAngle = null;
+        rotating = false;
+      }
+    }
+    el.addEventListener('touchend', endTouch, { passive: true });
+    el.addEventListener('touchcancel', endTouch, { passive: true });
+
+    // ── 電腦：Ctrl 拖曳或右鍵拖曳 ──
+    var dragging = false, startX = 0, startY = 0, startDeg = 0;
+
+    function centreOf() {
+      var r = el.getBoundingClientRect();
+      return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+    }
+
+    el.addEventListener('mousedown', function (e) {
+      if (!(e.ctrlKey || e.metaKey || e.button === 2)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      dragging = true;
+      startX = e.clientX; startY = e.clientY; startDeg = bearing;
+      map.dragging.disable();
+      el.classList.add('rotating');
+    }, true);
+
+    window.addEventListener('mousemove', function (e) {
+      if (!dragging) return;
+      // 以畫面中心為軸，比較起點與現在的角度差
+      var c = centreOf();
+      var a0 = Math.atan2(startY - c.y, startX - c.x);
+      var a1 = Math.atan2(e.clientY - c.y, e.clientX - c.x);
+      applyBearing(startDeg + (a1 - a0) * 180 / Math.PI, { silent: true });
+    });
+
+    window.addEventListener('mouseup', function () {
+      if (!dragging) return;
+      dragging = false;
+      map.dragging.enable();
+      el.classList.remove('rotating');
+      store.set('bearing', bearing);
+    });
+
+    // 右鍵拖曳轉動時不要跳出瀏覽器選單
+    el.addEventListener('contextmenu', function (e) {
+      if (bearing || dragging) e.preventDefault();
+    });
+  }());
 
   /* 尺寸一變，旋轉需要的邊距就不一樣，要重算。
    *

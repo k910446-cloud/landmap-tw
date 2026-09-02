@@ -372,3 +372,9 @@ button.projname:active{transform:translateY(1px)}
 #btn-bearing.is-on{background:var(--brand-2);color:#fff;border-color:var(--brand-2)}
 /* 控制項與文字標籤反向轉回來，維持正立好讀 */
 #map .lnlabel,#map .edgelabel,#map .lnprice{transform:rotate(calc(-1 * var(--bearing,0deg)))}
+/* 控制項搬出旋轉容器後，改用固定定位的浮層 */
+.leaflet-control-container.detached-controls{position:fixed;inset:0;z-index:800;
+  pointer-events:none}
+.leaflet-control-container.detached-controls .leaflet-control{pointer-events:auto}
+.leaflet-control-container.detached-controls .leaflet-bottom{bottom:var(--panel-h,0px)}
+#map.rotating{cursor:grabbing}
