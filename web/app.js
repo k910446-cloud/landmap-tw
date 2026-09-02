@@ -414,6 +414,109 @@
     this.value = '';
   });
 
+
+  /* ── 地圖轉動 ──────────────────────────────────────────────
+   *
+   * Leaflet 1.9 沒有原生的旋轉。這裡用 CSS 把整個地圖容器轉起來，
+   * 但只轉畫面是不夠的 —— 轉了之後有兩件事會壞掉，都得補：
+   *
+   *   點擊  Leaflet 依容器的外接矩形換算滑鼠座標，容器一旋轉，
+   *         外接矩形就不等於容器本身，點下去會落在錯的地方。
+   *   拖曳  Leaflet 把「螢幕上的位移」直接套到地圖平移，
+   *         轉了之後往右拖地圖會朝斜的方向跑。
+   *
+   * 另外兩個細節：控制項與文字標籤反向旋轉，維持正立好讀；
+   * 容器轉動後四角會露白，所以轉動時把容器放大到足以覆蓋（最多 √2 倍）。
+   */
+  var bearing = store.get('bearing', 0);
+  var pendingBearing = false;
+
+  function rotatePt(p, deg) {
+    var a = deg * Math.PI / 180;
+    var c = Math.cos(a), s2 = Math.sin(a);
+    return L.point(p.x * c - p.y * s2, p.x * s2 + p.y * c);
+  }
+
+  // 拖曳：把螢幕位移轉回地圖座標系。包在 _updatePosition 外面，
+  // 不重寫 Leaflet 內部邏輯 —— 慣性滑行記錄的也是轉換後的位置，方向才一致。
+  (function patchDrag() {
+    var orig = L.Draggable.prototype._updatePosition;
+    L.Draggable.prototype._updatePosition = function () {
+      if (bearing && this._startPos && this._newPos) {
+        var delta = this._newPos.subtract(this._startPos);
+        this._newPos = this._startPos.add(rotatePt(delta, -bearing));
+      }
+      orig.call(this);
+    };
+  }());
+
+  // 點擊：以容器中心為軸把螢幕座標轉回未旋轉的容器座標
+  var origToContainer = map.mouseEventToContainerPoint;
+  map.mouseEventToContainerPoint = function (e) {
+    if (!bearing) return origToContainer.call(this, e);
+    var el = this._container;
+    var r = el.getBoundingClientRect();
+    var d = L.point(e.clientX - (r.left + r.width / 2),
+                    e.clientY - (r.top + r.height / 2));
+    var p = rotatePt(d, -bearing);
+    return L.point(p.x + el.offsetWidth / 2, p.y + el.offsetHeight / 2);
+  };
+
+  function applyBearing(deg, opts) {
+    opts = opts || {};
+    bearing = ((deg % 360) + 360) % 360;
+    var el = map.getContainer();
+    var wrap = document.body;
+
+    /* 轉動之後四個角會露出背景，要把容器放大到足以覆蓋畫面。
+     * 需要的尺寸跟角度有關，不是固定比例：
+     *   寬 ≥ 畫面寬×|cos| + 畫面高×|sin|
+     *   高 ≥ 畫面寬×|sin| + 畫面高×|cos|
+     * 先前用固定的 21% 放大，45 度時高度就不夠，左下角會露出黑角。
+     */
+    /* 量不到尺寸時（面板剛開、分頁在背景、視窗剛顯示）只是算不出邊距，
+     * 不該連轉動本身都不做 —— 使用者轉了卻沒反應會以為壞了。
+     * 所以照常套用角度，只把邊距記成待補，等 ResizeObserver 通知再算。
+     */
+    var vw = wrap.clientWidth, vh = wrap.clientHeight;
+    pendingBearing = !vw || !vh;
+    var a = bearing * Math.PI / 180;
+    var ca = Math.abs(Math.cos(a)), sa = Math.abs(Math.sin(a));
+    var padX = (bearing && !pendingBearing) ? Math.ceil((vw * ca + vh * sa - vw) / 2) : 0;
+    var padY = (bearing && !pendingBearing) ? Math.ceil((vw * sa + vh * ca - vh) / 2) : 0;
+    if (!pendingBearing) {
+      el.style.left = el.style.right = padX ? (-padX + 'px') : '';
+      el.style.top = el.style.bottom = padY ? (-padY + 'px') : '';
+    }
+
+    el.style.transformOrigin = '50% 50%';
+    el.style.transform = bearing ? 'rotate(' + bearing + 'deg)' : '';
+    el.style.setProperty('--bearing', bearing + 'deg');
+
+    var cc = el.querySelector('.leaflet-control-container');
+    if (cc) cc.style.transform = bearing ? 'rotate(' + (-bearing) + 'deg)' : '';
+
+    /* 容器尺寸變了要讓 Leaflet 重新量，否則它會照舊尺寸出圖 ——
+     * 畫面上就是「中間一小塊有地圖、四周全黑」。
+     *
+     * 不要只放在 requestAnimationFrame 裡：分頁不在前景時 rAF 會被節流，
+     * 有可能一直不執行。這裡直接量一次（樣式已寫入，讀尺寸會強制重排），
+     * 再補一次延遲的，涵蓋樣式套用得比較慢的情況。
+     */
+    map.invalidateSize({ animate: false, pan: false });
+    setTimeout(function () {
+      map.invalidateSize({ animate: false, pan: false });
+    }, 60);
+    var nb = $('#btn-bearing');
+    if (nb) {
+      nb.querySelector('.needle').style.transform = 'rotate(' + (-bearing) + 'deg)';
+      nb.title = bearing ? ('地圖已轉 ' + Math.round(bearing) + '°，點一下轉回正北')
+                         : '地圖轉動（點一下歸北，左右拖曳可轉）';
+      nb.classList.toggle('is-on', !!bearing);
+    }
+    if (!opts.silent) store.set('bearing', bearing);
+  }
+
   // ── 圖層位置校正 ────────────────────────────────────────
   //
   // 不同來源的圖資套疊常有幾公尺的偏差。這裡用 CSS 位移整個疊圖窗格，
@@ -2174,8 +2277,73 @@
     this.value = '';
   });
 
+
+
+  /* 尺寸一變，旋轉需要的邊距就不一樣，要重算。
+   *
+   * 用 ResizeObserver 而不是 window.resize：頁面剛載入、分頁從背景切回來、
+   * 面板收合時，容器會從「量不到尺寸」變成有尺寸，但這些都不會發出
+   * resize 事件 —— 只監聽 resize 的話，還原上次的角度就會卡在沒套用的狀態。
+   */
+  (function watchSize() {
+    function reapply() {
+      if (bearing || pendingBearing) applyBearing(bearing, { silent: true });
+    }
+    if (window.ResizeObserver) {
+      new ResizeObserver(reapply).observe(document.body);
+    }
+    window.addEventListener('resize', reapply);
+    window.addEventListener('orientationchange', reapply);
+  }());
+
+  /* 指北針按鈕：點一下歸北，左右拖曳（或滑鼠滾輪）連續轉動。
+   * 放在上排按鈕列而不是地圖角落 —— 手機上單手拇指構得到。
+   */
+  (function wireBearing() {
+    var btn = $('#btn-bearing');
+    if (!btn) return;
+
+    var dragging = false, startX = 0, startDeg = 0, moved = 0;
+
+    function down(x) { dragging = true; startX = x; startDeg = bearing; moved = 0; }
+    function move(x) {
+      if (!dragging) return;
+      var dx = x - startX;
+      moved = Math.max(moved, Math.abs(dx));
+      applyBearing(startDeg + dx, { silent: true });
+    }
+    function up() {
+      if (!dragging) return;
+      dragging = false;
+      if (moved >= 4) store.set('bearing', bearing);
+    }
+
+    btn.addEventListener('pointerdown', function (e) {
+      // setPointerCapture 對某些來源（合成事件、部分筆／觸控裝置）會丟例外。
+      // 讓它中斷整個處理的話，按鈕就完全沒反應了 —— 拖曳體驗差一點無妨，
+      // 但不能因此連按都按不動。
+      try { btn.setPointerCapture(e.pointerId); } catch (err) { /* 沒有捕捉也能用 */ }
+      down(e.clientX);
+    });
+    btn.addEventListener('pointermove', function (e) { move(e.clientX); });
+    btn.addEventListener('pointerup', up);
+    btn.addEventListener('pointercancel', up);
+
+    // 「點一下歸北」用 click 而不是在 pointerup 裡判斷 ——
+    // 鍵盤 Enter、輔助工具觸發的也算數，不必真的有指標事件。
+    btn.addEventListener('click', function () {
+      if (moved >= 4) { moved = 0; return; }   // 剛剛是拖曳，不當成點擊
+      applyBearing(0);
+    });
+    btn.addEventListener('wheel', function (e) {
+      e.preventDefault();
+      applyBearing(bearing + (e.deltaY > 0 ? 5 : -5));
+    }, { passive: false });
+  }());
+
   // ── 啟動 ────────────────────────────────────────────────
   buildLayerUI();
+  applyBearing(bearing, { silent: true });
   if (showLandNo) setLandNoLayer(true);
   applyOffset();
   setBase(state.activeBase);
