@@ -142,6 +142,55 @@
     if (!dl.children.length) dl.appendChild(el('dd', 'muted', '無資料'));
   }
 
+  // 縣市的慣用排序：北 → 中 → 南 → 東 → 離島。
+  // 地段選單與圖層清單共用同一份，兩邊順序才會一致。
+  var COUNTY_ORDER = [
+    '基隆市', '臺北市', '新北市', '桃園市', '新竹市', '新竹縣', '苗栗縣',
+    '臺中市', '彰化縣', '南投縣', '雲林縣',
+    '嘉義市', '嘉義縣', '臺南市', '高雄市', '屏東縣',
+    '宜蘭縣', '花蓮縣', '臺東縣',
+    '澎湖縣', '金門縣', '連江縣'
+  ];
+
+  /* 圖層名稱像「使用分區　臺北市」或「地籍圖　新竹縣（含地號）」，
+   * 把縣市切出來用於排序。
+   *
+   * 縣市不一定在結尾 —— 地籍圖那組後面還有「（含地號）」，
+   * 只比對結尾的話那一組就不會被排到。所以整串找，取最靠前的那個。
+   */
+  function splitCounty(name) {
+    var best = null;
+    for (var i = 0; i < COUNTY_ORDER.length; i++) {
+      var at = name.indexOf(COUNTY_ORDER[i]);
+      if (at >= 0 && (best === null || at < best.at)) {
+        best = { at: at, idx: i };
+      }
+    }
+    if (!best) return { prefix: name, idx: -1 };
+    return { prefix: name.slice(0, best.at).trim(), idx: best.idx };
+  }
+
+  /* 群組內排序：先照原本寫的種類順序（使用分區在計畫區範圍前面），
+   * 種類相同再照縣市由北到南。
+   *
+   * 之所以在畫面上排而不是去改 layers.js 的排列順序：那份清單是照
+   * 「找到哪個縣市的服務就加一筆」長出來的，手動維持順序遲早會亂，
+   * 而且新增一個縣市就要重排一次。
+   */
+  function sortByCounty(list) {
+    var prefixOrder = {};
+    list.forEach(function (o, i) {
+      var p = splitCounty(o.name).prefix;
+      if (!(p in prefixOrder)) prefixOrder[p] = i;
+    });
+    return list.map(function (o, i) {
+      var sp = splitCounty(o.name);
+      return { o: o, k: [prefixOrder[sp.prefix], sp.idx < 0 ? 99 : sp.idx, i] };
+    }).sort(function (a, b) {
+      return (a.k[0] - b.k[0]) || (a.k[1] - b.k[1]) || (a.k[2] - b.k[2]);
+    }).map(function (x) { return x.o; });
+  }
+
   // ── 地圖 ────────────────────────────────────────────────
   var map = L.map('map', {
     center: store.get('center', [23.7, 120.96]),
@@ -310,7 +359,8 @@
       var sum = el('summary');
       sum.appendChild(el('span', 'lyr-gname', gname));
 
-      var inGroup = CATALOG.overlays.filter(function (o) { return o.group === gname; });
+      var inGroup = sortByCounty(
+        CATALOG.overlays.filter(function (o) { return o.group === gname; }));
       var onCount = inGroup.filter(function (o) {
         return state.overlays[o.id] && state.overlays[o.id].on;
       }).length;
@@ -1679,15 +1729,6 @@
       countiesLoaded = false;
     });
   }
-
-  // 縣市的慣用排序：北 → 中 → 南 → 東 → 離島
-  var COUNTY_ORDER = [
-    '基隆市', '臺北市', '新北市', '桃園市', '新竹市', '新竹縣', '苗栗縣',
-    '臺中市', '彰化縣', '南投縣', '雲林縣',
-    '嘉義市', '嘉義縣', '臺南市', '高雄市', '屏東縣',
-    '宜蘭縣', '花蓮縣', '臺東縣',
-    '澎湖縣', '金門縣', '連江縣'
-  ];
 
   $('#sel-county').addEventListener('change', function () {
     var c = this.value;
