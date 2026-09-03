@@ -37,10 +37,19 @@ code{font:12px/1.4 ui-monospace,Menlo,Consolas,monospace;background:var(--bg);pa
   padding-top:calc(8px + env(safe-area-inset-top,0px));
   background:linear-gradient(var(--bg) 62%,transparent);
   pointer-events:none;
+  /* 連點兩下不要放大整頁；這一列的東西都不需要縮放 */
+  touch-action:manipulation;
+  /* 真的擠不下時寧可讓搜尋框再窄一點，也不要把按鈕推出畫面 */
+  min-width:0;
+}
+/* 很窄的機型（或系統字放大）把間距收緊，留空間給搜尋框 */
+@media (max-width:380px){
+  #topbar{gap:6px;padding-left:8px;padding-right:8px}
+  .icon-btn{width:38px;height:38px;font-size:16px}
 }
 #topbar>*{pointer-events:auto}
 .icon-btn{
-  flex:0 0 auto;width:40px;height:40px;border:1px solid var(--line);border-radius:11px;
+  flex:0 0 auto;width:40px;height:40px;touch-action:manipulation;border:1px solid var(--line);border-radius:11px;
   background:var(--card);color:var(--ink);font-size:17px;line-height:1;cursor:pointer;
   box-shadow:var(--shadow);display:grid;place-items:center;
 }
