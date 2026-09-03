@@ -373,6 +373,58 @@ def format_landno(cfg, attrs):
     return "%d-%d" % (m, c) if c else "%d" % m
 
 
+def fetch_parcel_detail(cfg, x, y):
+    """向縣市的逐筆土地服務取登記面積與公告地價。
+
+    為什麼要另外抓：地籍圖層給的常常是「圖形面積」——把數化的宗地多邊形
+    算出來的值，跟地政登記簿上的「登記面積」本來就會差一點
+    （苗栗民族段 327：圖形 135.65、登記 134.98）。官方系統顯示的是登記面積，
+    只給圖形面積的話，使用者拿去對就會覺得我們算錯。
+
+    一次 identify 就能跨所有分層（那個服務是依地政事務所分層的）拿到結果。
+    """
+    d = cfg.get("detail")
+    if not d:
+        return None
+    params = {
+        "f": "json",
+        "geometry": "%f,%f" % (x, y),
+        "geometryType": "esriGeometryPoint",
+        "sr": str(d.get("wkid", 102443)),
+        "layers": "all",
+        "tolerance": "1",
+        "returnGeometry": "false",
+        "mapExtent": "%f,%f,%f,%f" % (x - 50, y - 50, x + 50, y + 50),
+        "imageDisplay": "400,400,96",
+    }
+    try:
+        req = urllib.request.Request(d["identify"] + "?" + urllib.parse.urlencode(params),
+                                     headers={"User-Agent": UA})
+        with urllib.request.urlopen(req, timeout=20, context=_SSL_CTX) as r:
+            data = json.loads(r.read().decode("utf-8", "replace"))
+    except Exception:
+        return None          # 取不到就算了，不要讓主查詢跟著失敗
+
+    results = data.get("results") or []
+    if not results:
+        return None
+    attrs = results[0].get("attributes") or {}
+
+    def num(keys):
+        v = pick_value(attrs, keys or [], exact=True)
+        try:
+            f = float(v)
+            return f if f > 0 else None
+        except (TypeError, ValueError):
+            return None
+
+    return {
+        "area": num(d.get("area")),
+        "landValue": num(d.get("landValue")),
+        "landPrice": num(d.get("landPrice")),
+    }
+
+
 def query_cadastre(lat, lon, county, sect_hint=None):
     """座標查地號。只有登錄了公開地籍圖服務的縣市查得到。
 
@@ -412,16 +464,31 @@ def query_cadastre(lat, lon, county, sect_hint=None):
         # 宗地輪廓給前端畫在地圖上（只取外環）
         out["rings"] = [[[p[1], p[0]] for p in r] for r in rings[:1]]
 
-    area = pick_value(attrs, cfg.get("area", []), exact=True)
+    # 面積有三種可能的來源，優先序：登記面積 > 服務給的面積 > 自己по圖形算。
+    # areaFrom 會一路帶到畫面上標明是哪一種 —— 圖形面積跟登記面積本來就
+    # 會差一點，講清楚才不會讓人以為算錯。
     a = None
-    try:
-        a = float(area)
-        if a <= 0:
+    detail = fetch_parcel_detail(cfg, x, y)
+    if detail:
+        if detail.get("area"):
+            a = detail["area"]
+            out["areaFrom"] = "registered"
+        if detail.get("landValue"):
+            out["landValue"] = detail["landValue"]
+        if detail.get("landPrice"):
+            out["landPrice"] = detail["landPrice"]
+
+    if a is None:
+        area = pick_value(attrs, cfg.get("area", []), exact=True)
+        try:
+            a = float(area)
+            if a <= 0:
+                a = None
+            else:
+                out["areaFrom"] = ("registered"
+                                   if cfg.get("areaKind") == "registered" else "service")
+        except (TypeError, ValueError):
             a = None
-        else:
-            out["areaFrom"] = "service"
-    except (TypeError, ValueError):
-        a = None
     if a is None and rings:
         a = ring_area_m2(rings[0])
         out["areaFrom"] = "geometry"
@@ -518,13 +585,32 @@ def find_parcel(county, sect, land_no):
         "town": pick_value(attrs, cfg.get("town") or [], exact=True),
         "rings": [[[p[1], p[0]] for p in ring] for ring in rings],
     }
+    # 面積來源與點位查詢用同一套規則：登記面積 > 服務給的 > 自己算，
+    # 並且標明是哪一種。兩條路徑給出不同的數字才是最糟的。
     a = None
-    try:
-        a = float(pick_value(attrs, cfg.get("area") or [], exact=True))
-    except (TypeError, ValueError):
-        a = None
+    if rings:
+        cx = sum(p[0] for p in rings[0]) / len(rings[0])
+        cy = sum(p[1] for p in rings[0]) / len(rings[0])
+        detail = fetch_parcel_detail(cfg, *geo.lonlat_to_tm2(cx, cy))
+        if detail:
+            if detail.get("area"):
+                a = detail["area"]
+                out["areaFrom"] = "registered"
+            if detail.get("landValue"):
+                out["landValue"] = detail["landValue"]
+            if detail.get("landPrice"):
+                out["landPrice"] = detail["landPrice"]
+    if a is None:
+        try:
+            a = float(pick_value(attrs, cfg.get("area") or [], exact=True))
+            if a > 0:
+                out["areaFrom"] = ("registered"
+                                   if cfg.get("areaKind") == "registered" else "service")
+        except (TypeError, ValueError):
+            a = None
     if (a is None or a <= 0) and rings:
         a = ring_area_m2(rings[0])
+        out["areaFrom"] = "geometry"
     if a and a > 0:
         out["areaM2"] = round(a, 2)
         out["areaPing"] = round(a / PING, 2)

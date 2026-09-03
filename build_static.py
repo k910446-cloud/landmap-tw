@@ -26,7 +26,10 @@ OUT = os.path.join(BASE_DIR, "web", "services.js")
 
 # 只有這些鍵前端用得到，其餘（下載網址、檔案大小）靜態版沒有意義
 FIELD_KEYS = ("url", "wkid", "sect", "sectcode", "landno", "landno8",
-              "mother", "child", "area", "town", "office", "source")
+              "mother", "child", "area", "town", "office", "source",
+              # 面積是登記面積還是圖形面積，以及能不能另外取得登記面積 ——
+              # 前端要照實標示，不能讓人以為圖形面積就是登記面積
+              "areaKind", "detail")
 
 
 def pick(cfg):

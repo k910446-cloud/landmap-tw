@@ -329,8 +329,20 @@ CADASTRE_COUNTIES = {
         'url': ('https://ailand.miaoli.gov.tw/server/rest/services'
                 '/Dynamic/LandNo/MapServer/0/query'),
         'sect': ['KCNT'], 'sectcode': ['AA48'], 'landno8': ['AA49'],
-        'landno': ['LandNo'], 'office': ['UNIT'], 'area': ['Shape.STArea()'],
+        'landno': ['LandNo'], 'office': ['UNIT'],
         'source': '苗栗縣政府 栗智網 公開圖服務',
+        # 這個圖層沒有面積欄位（Shape.STArea() 也沒回），只能由圖形計算 ——
+        # 但圖形面積跟登記面積不一樣（例：民族段 327 圖形 135.65、登記 134.98）。
+        # 登記面積在同一台主機的另一個服務裡，一次 identify 就能拿到，
+        # 順帶還有公告土地現值與公告地價。
+        'detail': {
+            'identify': ('https://ailand.miaoli.gov.tw/server/rest/services'
+                         '/Dynamic/EachLand/MapServer/identify'),
+            'wkid': 102443,
+            'area': ['AA10'],           # 登記面積（平方公尺）
+            'landValue': ['AA16'],      # 公告土地現值 元/m²
+            'landPrice': ['AA17'],      # 公告地價 元/m²
+        },
     },
     '彰化縣': {
         'service': 'arcgis', 'wkid': 102443, 'cors': True,
@@ -341,6 +353,29 @@ CADASTRE_COUNTIES = {
         'source': '彰化縣政府 公開圖服務',
     },
 }
+
+
+# 各縣市回的「面積」是哪一種 —— 這件事會直接影響使用者信不信這個 App。
+#
+# 登記面積是地政登記簿上的數字，官方系統顯示的就是它；圖形面積是把數化的
+# 宗地多邊形算出來的，兩者本來就會差一點（民族段 327：圖形 135.65、
+# 登記 134.98，差 0.5%）。混為一談的話，使用者拿去跟官方對就會覺得我們算錯。
+#
+#   registered  服務直接給登記面積（AREA / AA10 這類資料欄位）
+#   geometry    服務只給 Shape_Area 之類的幾何面積
+#   none        服務完全沒有面積欄位，只能由圖形計算
+AREA_KIND = {
+    '彰化縣': 'registered',    # AREA 80.63，圖形算 76.63
+    '新竹市': 'registered',    # AREA 1125.48，圖形算 1107.88
+    '新竹縣': 'registered',    # AA10 就是登記面積欄位
+    '臺北市': 'geometry',      # 只有 Shape_Area
+    '桃園市': 'geometry',      # 只有 Shape.STArea()
+    '臺中市': 'none',          # 沒有面積欄位
+    '苗栗縣': 'none',          # 沒有面積欄位，但可由 detail 服務取得登記面積
+}
+for _cty, _kind in AREA_KIND.items():
+    if _cty in CADASTRE_COUNTIES:
+        CADASTRE_COUNTIES[_cty]['areaKind'] = _kind
 
 
 def cadastre(county):

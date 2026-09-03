@@ -1100,6 +1100,12 @@
     renderEdges();
   }
 
+
+  // 千分位，給公告地價那種大數字用
+  function fmtInt(v) {
+    return String(Math.round(v)).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  }
+
   function runCadastre(ll, county, sectHint) {
     var seq = ++cadSeq;
     showParcel(null);
@@ -1136,10 +1142,30 @@
           chips.appendChild(c);
         }
         chip('段碼', d.sectCode);
-        if (d.areaM2) chip('面積', d.areaM2 + ' m²');
+        /* 面積要標明是哪一種。
+         * 登記面積是地政登記簿上的數字，官方系統顯示的就是它；
+         * 圖形面積是把數化的宗地多邊形算出來的，兩者本來就會差一點
+         * （民族段 327：登記 134.98、圖形 135.65）。不標的話，
+         * 使用者拿去跟官方系統對就會以為我們算錯。
+         */
+        var AREA_LABEL = {
+          registered: '登記面積', service: '來源面積', geometry: '圖形概算'
+        };
+        if (d.areaM2) chip(AREA_LABEL[d.areaFrom] || '面積', d.areaM2 + ' m²');
         if (d.areaPing) chip('約', d.areaPing + ' 坪');
-        if (d.areaFrom === 'geometry') chip('面積', '由圖形計算');
+        if (d.landValue) chip('公告土地現值', fmtInt(d.landValue) + ' 元/m²');
+        if (d.landPrice) chip('公告地價', fmtInt(d.landPrice) + ' 元/m²');
         if (chips.children.length) host.appendChild(chips);
+
+        if (d.areaFrom === 'geometry') {
+          host.appendChild(el('p', 'fineprint',
+            '這個縣市的公開圖層沒有提供登記面積，上面是依宗地圖形計算的概算值，'
+            + '通常與登記面積差 1% 以內。正式面積請以地政事務所核發的謄本為準。'));
+        } else if (d.landValue) {
+          host.appendChild(el('p', 'fineprint',
+            '面積與公告地價取自縣市地政的逐筆土地圖資，與官方查詢系統同一份來源。'
+            + '公告土地現值用於土地增值稅，公告地價用於地價稅，兩者不是市價。'));
+        }
 
         var row = el('div', 'row');
         var cp = el('button', 'btn', '複製地號');

@@ -133,6 +133,49 @@
     return feats.slice().sort(function (a, b) { return area(a) - area(b); });
   }
 
+
+  /* 向縣市的逐筆土地服務取「登記面積」與公告地價。
+   *
+   * 地籍圖層給的常常是圖形面積 —— 把數化的宗地多邊形算出來的值，
+   * 跟地政登記簿上的登記面積本來就會差一點（苗栗民族段 327：
+   * 圖形 135.65、登記 134.98）。官方系統顯示的是登記面積，
+   * 只給圖形面積的話，使用者拿去對就會覺得我們算錯。
+   */
+  function fetchDetail(cfg, x, y) {
+    var d = cfg.detail;
+    if (!d) return Promise.resolve(null);
+    var qs = {
+      f: 'json',
+      geometry: x + ',' + y,
+      geometryType: 'esriGeometryPoint',
+      sr: String(d.wkid || 102443),
+      layers: 'all',
+      tolerance: '1',
+      returnGeometry: 'false',
+      mapExtent: (x - 50) + ',' + (y - 50) + ',' + (x + 50) + ',' + (y + 50),
+      imageDisplay: '400,400,96'
+    };
+    var q = Object.keys(qs).map(function (k) {
+      return encodeURIComponent(k) + '=' + encodeURIComponent(qs[k]);
+    }).join('&');
+    var url = d.identify + '?' + q;
+    if (cfg.needsProxy && window.PROXY_URL) {
+      var base = window.PROXY_URL.replace(/\/+$/, '');
+      url = base + (base.indexOf('?') >= 0 ? '&' : '?') + 'u=' + encodeURIComponent(url);
+    }
+    return fetch(url).then(function (r) { return r.json(); }).then(function (data) {
+      var res = (data.results || [])[0];
+      if (!res) return null;
+      var a = res.attributes || {};
+      function num(keys) {
+        var v = pick(a, keys || [], true);
+        var f = parseFloat(v);
+        return (!isNaN(f) && f > 0) ? f : null;
+      }
+      return { area: num(d.area), landValue: num(d.landValue), landPrice: num(d.landPrice) };
+    }).catch(function () { return null; });   // 取不到就算了，不影響主查詢
+  }
+
   // ── 座標查地號 ──────────────────────────────────────────
   function cadastre(lat, lon, county, sectHint) {
     var cfg = (SERVICES.cadastre || {})[county];
@@ -168,15 +211,31 @@
       if (rings && rings.length) {
         out.rings = [rings[0].map(function (p) { return [p[1], p[0]]; })];
       }
-      var a = parseFloat(pick(attrs, cfg.area || [], true));
-      if (!isNaN(a) && a > 0) out.areaFrom = 'service';
-      else if (rings && rings.length) { a = ringAreaM2(rings[0]); out.areaFrom = 'geometry'; }
-      else a = NaN;
-      if (!isNaN(a) && a > 0) {
-        out.areaM2 = Math.round(a * 100) / 100;
-        out.areaPing = Math.round(a / PING * 100) / 100;
+      function finish(detail) {
+        // 面積優先序：登記面積 > 服務給的 > 自己по圖形算，並標明是哪一種
+        var a = NaN;
+        if (detail) {
+          if (detail.area) { a = detail.area; out.areaFrom = 'registered'; }
+          if (detail.landValue) out.landValue = detail.landValue;
+          if (detail.landPrice) out.landPrice = detail.landPrice;
+        }
+        if (isNaN(a) || a <= 0) {
+          a = parseFloat(pick(attrs, cfg.area || [], true));
+          if (!isNaN(a) && a > 0) {
+            out.areaFrom = (cfg.areaKind === 'registered') ? 'registered' : 'service';
+          }
+        }
+        if ((isNaN(a) || a <= 0) && rings && rings.length) {
+          a = ringAreaM2(rings[0]);
+          out.areaFrom = 'geometry';
+        }
+        if (!isNaN(a) && a > 0) {
+          out.areaM2 = Math.round(a * 100) / 100;
+          out.areaPing = Math.round(a / PING * 100) / 100;
+        }
+        return out;
       }
-      return out;
+      return fetchDetail(cfg, xy[0], xy[1]).then(finish);
     }).catch(function (e) {
       return { status: 'error', county: county,
         message: county + ' 的地籍服務目前無法使用：' + (e.message || e) };
@@ -324,13 +383,36 @@
           return r.map(function (p) { return [p[1], p[0]]; });
         })
       };
-      var a = parseFloat(pick(attrs, cfg.area || [], true));
-      if (isNaN(a) || a <= 0) a = rings.length ? ringAreaM2(rings[0]) : NaN;
-      if (!isNaN(a) && a > 0) {
-        out.areaM2 = Math.round(a * 100) / 100;
-        out.areaPing = Math.round(a / PING * 100) / 100;
+      // 面積來源與點位查詢用同一套規則 —— 兩條路徑給不同的數字才是最糟的
+      var cx = 0, cy = 0;
+      if (rings.length) {
+        rings[0].forEach(function (p2) { cx += p2[0]; cy += p2[1]; });
+        cx /= rings[0].length; cy /= rings[0].length;
       }
-      return out;
+      var pxy = rings.length ? projectPoint(cfg, cx, cy) : [0, 0];
+      return fetchDetail(cfg, pxy[0], pxy[1]).then(function (detail) {
+        var a = NaN;
+        if (detail) {
+          if (detail.area) { a = detail.area; out.areaFrom = 'registered'; }
+          if (detail.landValue) out.landValue = detail.landValue;
+          if (detail.landPrice) out.landPrice = detail.landPrice;
+        }
+        if (isNaN(a) || a <= 0) {
+          a = parseFloat(pick(attrs, cfg.area || [], true));
+          if (!isNaN(a) && a > 0) {
+            out.areaFrom = (cfg.areaKind === 'registered') ? 'registered' : 'service';
+          }
+        }
+        if ((isNaN(a) || a <= 0) && rings.length) {
+          a = ringAreaM2(rings[0]);
+          out.areaFrom = 'geometry';
+        }
+        if (!isNaN(a) && a > 0) {
+          out.areaM2 = Math.round(a * 100) / 100;
+          out.areaPing = Math.round(a / PING * 100) / 100;
+        }
+        return out;
+      });
     }).catch(function (e) {
       return { status: 'error', county: county,
         message: county + ' 的地籍服務目前無法使用：' + (e.message || e) };

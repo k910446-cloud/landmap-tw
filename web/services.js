@@ -27,7 +27,8 @@ window.SERVICES = {
       "town": [
         "zondesc"
       ],
-      "source": "臺中市政府都市發展局 公開圖服務"
+      "source": "臺中市政府都市發展局 公開圖服務",
+      "areaKind": "none"
     },
     "臺北市": {
       "url": "https://www.historygis.udd.gov.taipei/arcgis/rest/services/Urban/Land_Dynamic/MapServer/5/query",
@@ -53,7 +54,8 @@ window.SERVICES = {
       "town": [
         "dist_name"
       ],
-      "source": "臺北市政府都市發展局 公開圖服務"
+      "source": "臺北市政府都市發展局 公開圖服務",
+      "areaKind": "geometry"
     },
     "桃園市": {
       "url": "https://urbandatasrv.tycg.gov.tw/server/rest/services/TY_UPGIS/TYMap_SDE/MapServer/1/query",
@@ -71,7 +73,8 @@ window.SERVICES = {
       "area": [
         "Shape.STArea()"
       ],
-      "source": "桃園市政府都市發展局 公開圖服務"
+      "source": "桃園市政府都市發展局 公開圖服務",
+      "areaKind": "geometry"
     },
     "新竹市": {
       "url": "https://urbanmap.hccg.gov.tw/server/rest/services/Land/Land/MapServer/0/query",
@@ -94,7 +97,8 @@ window.SERVICES = {
       "town": [
         "TNAME"
       ],
-      "source": "新竹市政府都市發展處 公開圖服務"
+      "source": "新竹市政府都市發展處 公開圖服務",
+      "areaKind": "registered"
     },
     "新竹縣": {
       "url": "https://imap.hchg.gov.tw/arcgis/rest/services/Tiled3857/Land3857/MapServer/1/query",
@@ -114,7 +118,8 @@ window.SERVICES = {
       "office": [
         "UNIT"
       ],
-      "source": "新竹縣政府 智慧圖資雲 公開圖服務"
+      "source": "新竹縣政府 智慧圖資雲 公開圖服務",
+      "areaKind": "registered"
     },
     "苗栗縣": {
       "url": "https://ailand.miaoli.gov.tw/server/rest/services/Dynamic/LandNo/MapServer/0/query",
@@ -131,13 +136,24 @@ window.SERVICES = {
       "landno8": [
         "AA49"
       ],
-      "area": [
-        "Shape.STArea()"
-      ],
       "office": [
         "UNIT"
       ],
       "source": "苗栗縣政府 栗智網 公開圖服務",
+      "areaKind": "none",
+      "detail": {
+        "identify": "https://ailand.miaoli.gov.tw/server/rest/services/Dynamic/EachLand/MapServer/identify",
+        "wkid": 102443,
+        "area": [
+          "AA10"
+        ],
+        "landValue": [
+          "AA16"
+        ],
+        "landPrice": [
+          "AA17"
+        ]
+      },
       "needsProxy": true
     },
     "彰化縣": {
@@ -161,7 +177,8 @@ window.SERVICES = {
       "town": [
         "TNAME"
       ],
-      "source": "彰化縣政府 公開圖服務"
+      "source": "彰化縣政府 公開圖服務",
+      "areaKind": "registered"
     }
   },
   "urban": {
