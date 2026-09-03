@@ -93,7 +93,7 @@ code{font:12px/1.4 ui-monospace,Menlo,Consolas,monospace;background:var(--bg);pa
     touch-action:none;
   }
   #panel.is-dragging{transition:none}
-  #grabber{display:block;height:26px;flex:0 0 auto;cursor:grab;touch-action:none}
+  #grabber{display:block;height:30px;flex:0 0 auto;cursor:grab;touch-action:none}
   #grabber:active{cursor:grabbing}
   #grabber::after{
     content:"";display:block;width:44px;height:5px;border-radius:3px;

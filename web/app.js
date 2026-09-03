@@ -375,23 +375,34 @@
 
   (function wireSheetDrag() {
     var handles = [$('#grabber'), $('#tabs')];
-    var dragging = false, startY = 0, startOff = 0, lastY = 0, lastT = 0, vy = 0;
+    /* 分頁列也是把手，但分頁按鈕填滿整列，沒有空白處可抓 ——
+     * 所以改成「按下去先不決定」：手指移動超過門檻才算拖曳，
+     * 並把接下來那一次 click 吃掉，免得收合面板時順手切到別的分頁。
+     * 沒超過門檻就是單純的點擊，分頁照常切換。
+     */
+    var DRAG_THRESHOLD = 8;
+    var pressed = false, dragging = false, moved = false;
+    var startY = 0, startOff = 0, lastY = 0, lastT = 0, vy = 0;
 
     function begin(e) {
       if (!isSheet()) return;
-      // 分頁按鈕本身要能點，只有列的空白處才當把手
-      if (e.currentTarget === $('#tabs') && e.target.closest('.tab')) return;
-      dragging = true;
+      dragging = false;          // 超過門檻才算拖曳，否則當成點擊
+      moved = false;
+      pressed = true;
       startY = lastY = e.clientY;
       lastT = Date.now();
       vy = 0;
       startOff = snapOffset(sheetSnap);
-      panel.classList.add('is-dragging');
-      try { e.currentTarget.setPointerCapture(e.pointerId); } catch (err) { /* 沒捕捉也能用 */ }
     }
 
     function move(e) {
-      if (!dragging) return;
+      if (!pressed) return;
+      if (!dragging) {
+        if (Math.abs(e.clientY - startY) < DRAG_THRESHOLD) return;
+        dragging = true;
+        moved = true;
+        panel.classList.add('is-dragging');
+      }
       var now = Date.now();
       if (now > lastT) vy = (e.clientY - lastY) / (now - lastT);  // px/ms，往下為正
       lastY = e.clientY;
@@ -402,7 +413,9 @@
     }
 
     function end() {
-      if (!dragging) return;
+      if (!pressed) return;
+      pressed = false;
+      if (!dragging) return;      // 只是點一下，交給原本的按鈕處理
       dragging = false;
       var cur = startOff + (lastY - startY);
       var order = [SNAP_FULL, SNAP_HALF, SNAP_PEEK];
@@ -431,6 +444,14 @@
     handles.forEach(function (h) {
       if (h) h.addEventListener('pointerdown', begin);
     });
+
+    // 拖曳完的那一次 click 要吃掉，否則收合面板時會順手切到別的分頁
+    $('#tabs').addEventListener('click', function (e) {
+      if (!moved) return;
+      moved = false;
+      e.preventDefault();
+      e.stopPropagation();
+    }, true);
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', end);
     window.addEventListener('pointercancel', end);
