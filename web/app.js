@@ -393,11 +393,9 @@
     function move(e) {
       if (!dragging) return;
       var now = Date.now();
-      if (now > lastT) {
-        vy = (e.clientY - lastY) / (now - lastT);   // px/ms，往下為正
-        lastY = e.clientY;
-        lastT = now;
-      }
+      if (now > lastT) vy = (e.clientY - lastY) / (now - lastT);  // px/ms，往下為正
+      lastY = e.clientY;
+      lastT = now;
       var off = startOff + (e.clientY - startY);
       var max = snapOffset(SNAP_PEEK);
       applyOffset2(Math.max(0, Math.min(max, off)), false);
@@ -426,13 +424,16 @@
       setSnap(best, true);
     }
 
+    /* 只有 pointerdown 綁在把手上，move 與 up 綁在 window。
+     * 綁在把手上的話，手指一滑出把手範圍就收不到事件 ——
+     * 拖到一半會卡住，放開也不會吸附到段落。
+     */
     handles.forEach(function (h) {
-      if (!h) return;
-      h.addEventListener('pointerdown', begin);
-      h.addEventListener('pointermove', move);
-      h.addEventListener('pointerup', end);
-      h.addEventListener('pointercancel', end);
+      if (h) h.addEventListener('pointerdown', begin);
     });
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', end);
+    window.addEventListener('pointercancel', end);
 
     /* 轉向或視窗變化時，段落的像素值會變，要重算。
      *
