@@ -434,11 +434,20 @@
       h.addEventListener('pointercancel', end);
     });
 
-    // 轉向或視窗變化時，段落的像素值會變，要重算
-    window.addEventListener('resize', function () {
-      if (isSheet()) applyOffset2(snapOffset(sheetSnap), true);
-      else panel.style.transform = '';
-    });
+    /* 轉向或視窗變化時，段落的像素值會變，要重算。
+     *
+     * 用 ResizeObserver 而不只是 resize 事件：頁面剛載入或分頁從背景切回來時，
+     * 面板高度會從「量不到」變成有值，但這不會發出 resize —— 只聽 resize 的話
+     * 起始那一段會用 0 去算，面板就停在全開而不是預設的一半。
+     */
+    function reapply() {
+      if (!isSheet()) { panel.style.transform = ''; return; }
+      if (!panel.offsetHeight) return;      // 還量不到就先不動
+      applyOffset2(snapOffset(sheetSnap), true);
+    }
+    if (window.ResizeObserver) new ResizeObserver(reapply).observe(panel);
+    window.addEventListener('resize', reapply);
+    window.addEventListener('orientationchange', reapply);
   }());
 
   function showTab(name) {
