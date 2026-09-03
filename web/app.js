@@ -303,17 +303,143 @@
   var panel = $('#panel');
   // persist 只在使用者自己開關時才寫入 — 否則「畫面一開始比較窄」這種
   // 暫時狀態會被記成永久偏好。
+  /* 下方面板是可以用手指拉的抽屜。
+   *
+   * 手機上只有「全開／收起」兩態很難用：看地籍圖時想露多一點地圖、
+   * 看條文時想拉高一點。所以做成三段（收起／一半／全開），
+   * 拖曳時面板跟著手指走，放開再吸附到最近的一段。
+   *
+   * 桌機是右側欄，沒有這回事，維持原本的開關。
+   */
+  var SNAP_PEEK = 'peek', SNAP_HALF = 'half', SNAP_FULL = 'full';
+  var sheetSnap = store.get('sheetSnap', SNAP_HALF);
+
+  function isSheet() { return window.innerWidth < 720; }
+
+  function sheetHeight() { return panel.offsetHeight; }
+
+  // 每一段要「往下推」多少：0 就是全開
+  function snapOffset(name) {
+    var h = sheetHeight();
+    if (name === SNAP_FULL) return 0;
+    if (name === SNAP_PEEK) return Math.max(0, h - 46 - safeBottom());
+    var half = Math.min(h, Math.round(window.innerHeight * 0.62));
+    return Math.max(0, h - half);
+  }
+
+  function safeBottom() {
+    var v = getComputedStyle(document.documentElement)
+      .getPropertyValue('--safe-b').trim();
+    var n = parseFloat(v);
+    return isNaN(n) ? 0 : n;
+  }
+
+  function applyOffset2(px, animate) {
+    panel.classList.toggle('is-dragging', !animate);
+    panel.style.transform = px ? ('translateY(' + Math.round(px) + 'px)') : '';
+  }
+
+  function setSnap(name, persist) {
+    sheetSnap = name;
+    if (persist) store.set('sheetSnap', name);
+    if (!isSheet()) return;
+    applyOffset2(snapOffset(name), true);
+    var open = name !== SNAP_PEEK;
+    document.body.classList.toggle('panel-closed', !open);
+    $('#btn-panel').classList.toggle('is-on', open);
+    setTimeout(function () { map.invalidateSize({ pan: false }); }, 300);
+  }
+
   function setPanel(open, persist) {
+    if (isSheet()) {
+      setSnap(open ? (sheetSnap === SNAP_PEEK ? SNAP_HALF : sheetSnap) : SNAP_PEEK,
+              persist);
+      if (persist) store.set('panelOpen', open);
+      return;
+    }
+    panel.style.transform = '';
     panel.classList.toggle('is-closed', !open);
     document.body.classList.toggle('panel-closed', !open);
     $('#btn-panel').classList.toggle('is-on', open);
     if (persist) store.set('panelOpen', open);
     setTimeout(function () { map.invalidateSize({ pan: false }); }, 300);
   }
+
   $('#btn-panel').addEventListener('click', function () {
+    if (isSheet()) {
+      setPanel(sheetSnap === SNAP_PEEK, true);
+      return;
+    }
     setPanel(panel.classList.contains('is-closed'), true);
   });
-  $('#grabber').addEventListener('click', function () { setPanel(true, true); });
+
+  (function wireSheetDrag() {
+    var handles = [$('#grabber'), $('#tabs')];
+    var dragging = false, startY = 0, startOff = 0, lastY = 0, lastT = 0, vy = 0;
+
+    function begin(e) {
+      if (!isSheet()) return;
+      // 分頁按鈕本身要能點，只有列的空白處才當把手
+      if (e.currentTarget === $('#tabs') && e.target.closest('.tab')) return;
+      dragging = true;
+      startY = lastY = e.clientY;
+      lastT = Date.now();
+      vy = 0;
+      startOff = snapOffset(sheetSnap);
+      panel.classList.add('is-dragging');
+      try { e.currentTarget.setPointerCapture(e.pointerId); } catch (err) { /* 沒捕捉也能用 */ }
+    }
+
+    function move(e) {
+      if (!dragging) return;
+      var now = Date.now();
+      if (now > lastT) {
+        vy = (e.clientY - lastY) / (now - lastT);   // px/ms，往下為正
+        lastY = e.clientY;
+        lastT = now;
+      }
+      var off = startOff + (e.clientY - startY);
+      var max = snapOffset(SNAP_PEEK);
+      applyOffset2(Math.max(0, Math.min(max, off)), false);
+    }
+
+    function end() {
+      if (!dragging) return;
+      dragging = false;
+      var cur = startOff + (lastY - startY);
+      var order = [SNAP_FULL, SNAP_HALF, SNAP_PEEK];
+
+      // 甩得夠快就往那個方向再跳一段，慢慢拖才吸附到最近的
+      var best = order[0], dist = Infinity;
+      order.forEach(function (n) {
+        var d = Math.abs(snapOffset(n) - cur);
+        if (d < dist) { dist = d; best = n; }
+      });
+      if (Math.abs(vy) > 0.5) {
+        var i = order.indexOf(best);
+        var to = vy > 0 ? Math.min(order.length - 1, i + 1) : Math.max(0, i - 1);
+        // 只有還沒到那個方向的端點時才多跳一段
+        if ((vy > 0 && cur > snapOffset(best)) || (vy < 0 && cur < snapOffset(best))) {
+          best = order[to];
+        }
+      }
+      setSnap(best, true);
+    }
+
+    handles.forEach(function (h) {
+      if (!h) return;
+      h.addEventListener('pointerdown', begin);
+      h.addEventListener('pointermove', move);
+      h.addEventListener('pointerup', end);
+      h.addEventListener('pointercancel', end);
+    });
+
+    // 轉向或視窗變化時，段落的像素值會變，要重算
+    window.addEventListener('resize', function () {
+      if (isSheet()) applyOffset2(snapOffset(sheetSnap), true);
+      else panel.style.transform = '';
+    });
+  }());
 
   function showTab(name) {
     $$('#tabs .tab').forEach(function (t) { t.classList.toggle('is-on', t.dataset.tab === name); });

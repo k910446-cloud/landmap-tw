@@ -7,6 +7,8 @@
   --panel-w:392px; --top-h:56px;
   --safe-b:env(safe-area-inset-bottom,0px);
   --sheet-h:min(62vh,560px);
+  /* 抽屜拉到最高時的高度（下方留一點看得到地圖） */
+  --sheet-max:min(86vh,760px);
 }
 @media (prefers-color-scheme:dark){
   :root{
@@ -83,16 +85,22 @@ code{font:12px/1.4 ui-monospace,Menlo,Consolas,monospace;background:var(--bg);pa
 
 /* 手機：下方抽屜 */
 @media (max-width:719px){
+  /* 手機版是可以用手指拉的抽屜：面板本身固定在最高高度，
+   * 露出多少由 transform 決定，拖曳時直接跟著手指走。 */
   #panel{
-    left:0;right:0;bottom:0;height:calc(var(--sheet-h) + var(--safe-b));
+    left:0;right:0;bottom:0;height:calc(var(--sheet-max) + var(--safe-b));
     border-radius:16px 16px 0 0;padding-bottom:var(--safe-b);
+    touch-action:none;
   }
-  #panel.is-closed{transform:translateY(calc(100% - 46px - var(--safe-b)))}
-  #grabber{display:block;height:20px;flex:0 0 auto;cursor:grab}
+  #panel.is-dragging{transition:none}
+  #grabber{display:block;height:26px;flex:0 0 auto;cursor:grab;touch-action:none}
+  #grabber:active{cursor:grabbing}
   #grabber::after{
-    content:"";display:block;width:38px;height:4px;border-radius:2px;
-    background:var(--line);margin:8px auto 0;
+    content:"";display:block;width:44px;height:5px;border-radius:3px;
+    background:var(--ink-3);opacity:.5;margin:10px auto 0;
   }
+  /* 分頁列也能拖 —— 手指比較好抓，不必精準壓在那條細線上 */
+  #tabs{touch-action:none}
 }
 /* 桌機：右側欄 */
 @media (min-width:720px){
