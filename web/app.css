@@ -349,6 +349,8 @@ dd{margin:0;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
   border-radius:5px;padding:1px 5px}
 .dealproj{font-size:10.5px;color:#1864ab;border:1px solid #a5c8e8;background:#eef6fd;
   border-radius:5px;padding:1px 5px}
+.dealzone{font-size:10.5px;color:#2b7a4b;border:1px solid #a8d5b8;background:#eefaf1;
+  border-radius:5px;padding:1px 5px}
 .dealage{font-size:10.5px;color:var(--ink-3)}
 .projlist{display:inline-flex;flex-wrap:wrap;gap:4px;margin-left:4px}
 .projname{font-size:11px;color:#1864ab;border:1px solid #a5c8e8;background:#eef6fd;
@@ -382,3 +384,79 @@ button.projname:active{transform:translateY(1px)}
 .lyr-count{font-size:11px;font-weight:600;color:var(--ink-3);border:1px solid var(--line);
   border-radius:10px;padding:1px 8px}
 .lyr-count.is-on{color:#fff;background:var(--brand-2);border-color:var(--brand-2)}
+
+/* ── 容積分析 ──────────────────────────────────────────────
+ * 橘色（--accent）在這一頁固定代表「這個數字沒有法源依據」。
+ * 使用者要求所有來源都要有依據，做不到的就要一眼看得出來。
+ */
+.far-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px 12px;margin-top:8px}
+@media (max-width:420px){.far-grid{grid-template-columns:1fr}}
+.far-lab{display:block;font-size:12px;color:var(--ink-2);font-weight:600}
+.far-lab input,.far-lab select,.far-lab textarea{
+  display:block;width:100%;margin-top:4px;padding:7px 8px;font:inherit;font-size:14px;
+  color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:7px;
+}
+.far-lab textarea{resize:vertical;line-height:1.5}
+.far-lab input:focus,.far-lab select:focus,.far-lab textarea:focus{
+  outline:none;border-color:var(--brand-2);box-shadow:0 0 0 3px rgba(47,107,82,.14)
+}
+.far-msg{font-size:13px;color:var(--ink-3);align-self:center}
+
+.far-src{margin:3px 0 0;font-size:11px;line-height:1.45;color:var(--ink-3);font-weight:400}
+.far-src.assumed{color:var(--accent)}
+.far-src a{margin-left:3px}
+
+.far-tbl{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px}
+.far-tbl th{
+  text-align:left;font-size:11px;letter-spacing:.03em;color:var(--ink-3);
+  font-weight:700;padding:4px 6px;border-bottom:1px solid var(--line);white-space:nowrap
+}
+.far-tbl td{padding:5px 6px;border-bottom:1px solid var(--line);vertical-align:top}
+.far-tbl td.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.far-tbl tr.bad td{color:var(--accent)}
+.far-tbl td.bad{color:var(--accent)}
+
+.far-res td.lbl{width:52%}
+.far-res tr.assumed td.lbl{box-shadow:inset 3px 0 0 var(--accent)}
+.far-f{font:11px/1.45 ui-monospace,Menlo,Consolas,monospace;color:var(--ink-3);margin-top:2px}
+.far-note{font-size:11px;color:var(--ink-3);white-space:nowrap}
+
+.far-warn{
+  margin:8px 0 0;padding:7px 9px;font-size:12px;line-height:1.5;
+  background:var(--warn-bg);border:1px solid var(--warn-line);border-radius:7px
+}
+.far-assumed{
+  margin-top:10px;padding:8px 10px;font-size:12px;line-height:1.55;
+  background:var(--warn-bg);border:1px solid var(--warn-line);border-radius:7px
+}
+.far-assumed ul{margin:5px 0 0;padding-left:18px}
+.far-assumed li{margin:1px 0}
+
+.far-dl{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;margin:10px 0 0;font-size:13px}
+.far-dl dt{color:var(--ink-3)}
+.far-dl dd{margin:0;font-variant-numeric:tabular-nums}
+
+.far-bonus{
+  display:grid;grid-template-columns:1fr 110px 90px;gap:6px;align-items:center;
+  padding:8px 0;border-bottom:1px solid var(--line)
+}
+.far-bonus input,.far-bonus select{
+  padding:6px 7px;font:inherit;font-size:13px;color:var(--ink);
+  background:var(--card);border:1px solid var(--line);border-radius:6px;min-width:0
+}
+.far-bonus .far-lawin{grid-column:1/-1}
+.far-check{grid-column:1/3;font-size:12px;color:var(--ink-2);display:flex;align-items:center;gap:5px}
+.far-check input{width:auto;margin:0}
+.far-del{padding:4px 8px;font-size:12px}
+
+/* 列印時只留分析表，地圖與操作介面都拿掉 */
+@media print{
+  #map,#topbar,#tabs,#grabber,#hint,#loc-hud{display:none !important}
+  #panel{position:static;width:auto;max-width:none;height:auto;box-shadow:none;border:0}
+  #panes{overflow:visible;height:auto}
+  .pane{display:none}
+  .pane[data-pane="far"]{display:block !important}
+  .far-lab,.row,.far-bonus{display:none !important}
+  #far-site .far-lab{display:block !important}
+  .card{break-inside:avoid;box-shadow:none;border:1px solid #ccc}
+}

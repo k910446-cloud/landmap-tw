@@ -2167,6 +2167,9 @@
     if (t.areaPing) {
       row.appendChild(el('span', 'dealarea', t.areaPing + ' 坪'));
     }
+    // 使用分區：土地交易最想看的就是這個（「這塊 4590 萬的地是什麼分區」）。
+    // 來源是實價登錄自己帶的欄位，講的是成交當時的登記狀態。
+    if (t.zone) row.appendChild(el('span', 'dealzone', t.zone));
     if (t.project) row.appendChild(el('span', 'dealproj', t.project));
     if (t.btype) row.appendChild(el('span', 'dealage', t.btype));
     if (t.use && t.use !== '住家用') row.appendChild(el('span', 'dealage', t.use));

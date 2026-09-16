@@ -166,9 +166,9 @@ class TestVarint(unittest.TestCase):
     def test_section_roundtrip(self):
         """整個段編碼後解回來，欄位要一模一樣。"""
         parcels = {
-            "08800000": [[11502, 1452.0, 312621, 153.5, 4, 0, 3, -1, 2, 1],
-                         [11410, 1702.0, 324833, 173.2, 1, 16, 21, -1, 0, 0]],
-            "00020007": [[11312, 40.0, 13000, 30.8, 0, 1, -1, -1, -1, -1]],
+            "08800000": [[11502, 1452.0, 312621, 153.5, 4, 0, 3, -1, 2, 1, 0],
+                         [11410, 1702.0, 324833, 173.2, 1, 16, 21, -1, 0, 0, 2]],
+            "00020007": [[11312, 40.0, 13000, 30.8, 0, 1, -1, -1, -1, -1, -1]],
         }
         blob = build_prices.encode_section(parcels)
         got = self.decode_section(bytes(blob))
@@ -207,8 +207,9 @@ class TestVarint(unittest.TestCase):
                 proj, p = self.read_u(blob, p)
                 btype, p = self.read_u(blob, p)
                 use, p = self.read_u(blob, p)
+                zone, p = self.read_u(blob, p)
                 rows.append([ym, total / 10.0, unit, area / 10.0, kind, flags,
-                             age - 1, proj - 1, btype - 1, use - 1])
+                             age - 1, proj - 1, btype - 1, use - 1, zone - 1])
             out[key] = rows
         return out
 
@@ -233,6 +234,47 @@ class TestPriceFlags(unittest.TestCase):
         當成特殊交易排掉會濾掉幾乎所有住宅成交。"""
         self.assertEqual(build_prices.note_flags("持分移轉"), 0)
         self.assertEqual(build_prices.SHARE_FLAG, 16)
+
+
+class TestZoneText(unittest.TestCase):
+    """實價登錄的土地使用分區欄位判讀。
+
+    這欄不是單純的字串：都市土地是簡碼，「其他」還會夾帶一整句說明，
+    非都市則拆成分區與編定兩欄。判錯的話畫面上會出現「都市：其他:」
+    這種半截文字，或是把甲種建築用地的交易標成空白。
+    """
+
+    def test_urban_codes(self):
+        for code, want in (("住", "住宅區"), ("商", "商業區"),
+                           ("工", "工業區"), ("農", "農業區")):
+            self.assertEqual(build_prices.zone_text({"都市土地使用分區": code}), want)
+
+    def test_urban_other_keeps_the_real_zone(self):
+        """「都市：其他:第三種住宅區。」真正有用的是後面那一段。"""
+        self.assertEqual(
+            build_prices.zone_text({"都市土地使用分區": "都市：其他:第三種住宅區。"}),
+            "第三種住宅區")
+
+    def test_urban_other_drops_trailing_date(self):
+        self.assertEqual(
+            build_prices.zone_text(
+                {"都市土地使用分區": "都市：其他:道路用地(公共設施用地)。51/9/1"}),
+            "道路用地(公共設施用地)")
+
+    def test_non_urban_joins_zone_and_designation(self):
+        self.assertEqual(
+            build_prices.zone_text({"都市土地使用分區": "",
+                                    "非都市土地使用分區": "特定農業區",
+                                    "非都市土地使用編定": "農牧用地"}),
+            "特定農業區 農牧用地")
+
+    def test_blank_stays_blank(self):
+        """判讀不出來就留白 —— 顯示一個猜的分區比不顯示更糟。"""
+        self.assertEqual(build_prices.zone_text({}), "")
+        self.assertEqual(
+            build_prices.zone_text({"都市土地使用分區": "",
+                                    "非都市土地使用分區": "",
+                                    "非都市土地使用編定": ""}), "")
 
 
 class TestLawParsing(unittest.TestCase):

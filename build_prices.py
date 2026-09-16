@@ -180,10 +180,11 @@ def note_flags(text):
 
 
 def deal_record(m, presale=False, age=None, project=None,
-                btype=-1, use=-1, share=False):
+                btype=-1, use=-1, share=False, zone=-1):
     """一筆交易壓成小陣列。
 
-    [年月, 總價萬, 單價元每坪, 面積m2, 類型, 備註旗標, 屋齡, 建案編號]
+    [年月, 總價萬, 單價元每坪, 面積m2, 類型, 備註旗標, 屋齡, 建案編號,
+     建物型態, 主要用途, 使用分區]
 
     屋齡與建案名稱不是每筆都有：屋齡來自成屋的建物明細檔，
     建案名稱只有預售屋檔才有 —— 成屋的開放資料沒有這個欄位，
@@ -207,7 +208,41 @@ def deal_record(m, presale=False, age=None, project=None,
             round(area, 1), kind, flags,
             age if age is not None else -1,
             project if project is not None else -1,
-            btype, use]
+            btype, use, zone]
+
+
+# 都市土地使用分區欄位在開放資料裡是簡碼，「其他」還會夾帶說明文字
+URBAN_ZONE = {"住": "住宅區", "商": "商業區", "工": "工業區",
+              "農": "農業區", "其他": "其他"}
+
+
+def zone_text(m):
+    """這筆交易的土地使用分區。
+
+    開放資料把它拆成三欄：都市土地使用分區、非都市土地使用分區、
+    非都市土地使用編定。都市的那欄是簡碼（住／商／工／農／其他），
+    但「其他」有時會寫成一整句：
+
+        都市：其他:第三種住宅區。
+        都市：其他:道路用地(公共設施用地)。51/9/1
+
+    那句話裡的「第三種住宅區」才是使用者真正想看的，所以把冒號後面
+    那一段取出來；末尾的句號與發布日期去掉。非都市則是「分區＋編定」
+    兩段合起來（例：特定農業區 農牧用地），那才講得完整。
+
+    判讀不出來就回空字串 —— 寧可不顯示，也不要顯示一個猜的分區。
+    """
+    urban = (m.get("都市土地使用分區") or "").strip()
+    if urban:
+        if urban in URBAN_ZONE:
+            return URBAN_ZONE[urban]
+        # 「都市：其他:第三種住宅區。」→「第三種住宅區」
+        tail = urban.split(":")[-1].split("：")[-1].strip()
+        tail = re.sub(r"[。\s]*\d+/\d+/\d+\s*$", "", tail).strip("。 　")
+        return tail or urban
+    zone = (m.get("非都市土地使用分區") or "").strip()
+    desig = (m.get("非都市土地使用編定") or "").strip()
+    return " ".join(x for x in (zone, desig) if x)
 
 
 def dict_id(store, county, kind, name):
@@ -237,8 +272,9 @@ def build_county(z, code, county, store, projects):
 
     def attach(m, parts, presale, age, project, btype=-1, use=-1, share=False):
         nonlocal added
+        zone = dict_id(projects, county, "zone", zone_text(m))
         rec = deal_record(m, presale=presale, age=age, project=project,
-                          btype=btype, use=use, share=share)
+                          btype=btype, use=use, share=share, zone=zone)
         if rec[1] <= 0:
             return
         for p in parts:
@@ -349,6 +385,7 @@ def encode_section(parcels):
             put_uvarint(buf, r[7] + 1)                # 建案編號
             put_uvarint(buf, r[8] + 1)                # 建物型態
             put_uvarint(buf, r[9] + 1)                # 主要用途
+            put_uvarint(buf, r[10] + 1)               # 使用分區
     return buf
 
 
@@ -437,7 +474,8 @@ def main():
             "source": "內政部不動產成交案件實際資訊資料供應系統（實價登錄）",
             "licence": "政府資料開放授權條款－第 1 版",
             "fields": ["交易年月", "總價萬元", "單價元每坪", "面積平方公尺",
-                       "類型", "備註旗標", "屋齡", "建案", "建物型態", "主要用途"],
+                       "類型", "備註旗標", "屋齡", "建案", "建物型態", "主要用途",
+                       "使用分區"],
             "flags": {"1": "親友或特殊關係間交易", "2": "含裝潢或家具",
                       "4": "含增建或未登記建物", "8": "債權債務或法拍",
                       "16": "持分移轉"},
@@ -446,6 +484,7 @@ def main():
             "projects": projects.get(county, []),
             "btypes": projects.get(county + "#btype", []),
             "uses": projects.get(county + "#use", []),
+            "zones": projects.get(county + "#zone", []),
             "dealCount": deals,
             "sections": index,
         }

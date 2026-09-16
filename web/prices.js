@@ -73,7 +73,8 @@
         var proj = r.u() - 1;
         var btype = r.u() - 1;
         var use = r.u() - 1;
-        rows.push([ym, total, unit, area, kind, flags, age, proj, btype, use]);
+        var zone = r.u() - 1;
+        rows.push([ym, total, unit, area, kind, flags, age, proj, btype, use, zone]);
       }
       rows.sort(function (a, b) { return b[0] - a[0]; });   // 新到舊
       out[key] = rows;
@@ -216,6 +217,9 @@
           ? (meta.projects || [])[r[7]] : null,
         btype: (r[8] != null && r[8] >= 0) ? (meta.btypes || [])[r[8]] : null,
         use: (r[9] != null && r[9] >= 0) ? (meta.uses || [])[r[9]] : null,
+        // 這筆交易當時登記的土地使用分區（開放資料自己帶的欄位，
+        // 不是我們從圖層查的 —— 分區會隨都市計畫變更，這是成交時的狀態）
+        zone: (r[10] != null && r[10] >= 0) ? (meta.zones || [])[r[10]] : null,
         notes: Object.keys(meta.flags || {})
           .filter(function (bit) { return (r[5] || 0) & Number(bit); })
           .map(function (bit) { return meta.flags[bit]; })
