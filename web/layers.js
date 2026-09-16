@@ -77,6 +77,18 @@
     };
   }
 
+  /* 內政部地政司的開發區圖磚（免申請、免金鑰、有送 CORS 標頭）。
+   * 每一種開發方式都分「辦理完成」與「辦理中」兩層 —— 對做開發的人來說
+   * 「還在辦理中」那一層往往才是重點。 */
+  function dev(id, name, layer, note) {
+    return {
+      group: '土地開發', id: id, name: name, on: false, opacity: 0.75,
+      url: 'https://publands.land.moi.gov.tw/R02map/wmts/' + layer
+        + '/default/EPSG:3857/{z}/{y}/{x}',
+      maxNativeZoom: 20, attr: '開發區圖資 © 內政部地政司', note: note || undefined
+    };
+  }
+
   var OVERLAYS = [
     {
       group: '地籍', id: 'LANDSECT', name: '段籍圖（地段外圍）', url: url('LANDSECT'),
@@ -190,23 +202,14 @@
      * 這跟「都市計畫區範圍」是兩回事：都市計畫區講的是這塊地適用哪一套
      * 法規，重劃／徵收講的是這塊地有沒有被納入某個開發案 ——
      * 對做開發的人來說兩個都要看。 */
-    {
-      group: '土地開發', id: 'DEV_A4', name: '區段徵收', on: false, opacity: 0.75,
-      url: 'https://publands.land.moi.gov.tw/R02map/wmts/USEA4/default/EPSG:3857/{z}/{y}/{x}',
-      maxNativeZoom: 20, attr: '開發區圖資 © 內政部地政司',
-      note: '全國已完成、辦理中及規劃中的區段徵收開發區，圖上有開發區名稱。'
-    },
-    {
-      group: '土地開發', id: 'DEV_B4', name: '市地重劃', on: false, opacity: 0.75,
-      url: 'https://publands.land.moi.gov.tw/R02map/wmts/USEB4/default/EPSG:3857/{z}/{y}/{x}',
-      maxNativeZoom: 20, attr: '開發區圖資 © 內政部地政司',
-      note: '全國市地重劃區，圖上有重劃區名稱。'
-    },
-    {
-      group: '土地開發', id: 'DEV_D4', name: '農村社區土地重劃', on: false, opacity: 0.75,
-      url: 'https://publands.land.moi.gov.tw/R02map/wmts/USED4/default/EPSG:3857/{z}/{y}/{x}',
-      maxNativeZoom: 20, attr: '開發區圖資 © 內政部地政司'
-    },
+    dev('DEV_A4', '區段徵收（辦理完成）', 'USEA4',
+      '已公告完成的區段徵收開發區，圖上有開發區名稱。'),
+    dev('DEV_A3', '區段徵收（辦理中）', 'USEA3',
+      '還在辦理中的區段徵收 —— 對開發評估來說，這一層往往比已完成的更重要。'),
+    dev('DEV_B4', '市地重劃（辦理完成）', 'USEB4', '已完成的市地重劃區。'),
+    dev('DEV_B3', '市地重劃（辦理中）', 'USEB3', '還在辦理中的市地重劃區。'),
+    dev('DEV_D4', '農村社區土地重劃（辦理完成）', 'USED4', null),
+    dev('DEV_D3', '農村社區土地重劃（辦理中）', 'USED3', null),
 
     {
       group: '使用分區 / 類別', id: 'nURBAN1', name: '非都市土地使用分區圖', url: url('nURBAN1'),
