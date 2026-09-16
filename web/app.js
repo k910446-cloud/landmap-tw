@@ -301,6 +301,19 @@
 
   // 疊圖
   function buildOverlay(o, opts) {
+    // GeoServer 的 WMS：不是圖磚服務，依每一塊的範圍即時出圖。
+    // 新竹縣竹東鎮的都市計畫只有這種發布方式。
+    if (o.wms) {
+      return L.tileLayer.wms(o.wms.base, Object.assign({
+        layers: o.wms.layers,
+        format: 'image/png',
+        transparent: true,
+        version: '1.1.1',
+        maxZoom: 20,
+        minZoom: o.minZoom || 0,
+        attribution: o.attr || CATALOG.attribution
+      }, opts));
+    }
     if (o.exportService) {
       var Cls = o.serial ? L.TileLayer.SerialArcGISExport : L.TileLayer.ArcGISExport;
       return new Cls('', Object.assign({

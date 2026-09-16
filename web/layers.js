@@ -58,6 +58,25 @@
   var CH = 'https://urbangis.chcg.gov.tw/arcgis/rest/services/CHCGMap/CITYPLANS/MapServer/export';
   var ML = 'https://ailand.miaoli.gov.tw/server/rest/services/Dynamic/Urban_Planning/MapServer/export';
 
+  /* 新竹縣的都市計畫只有竹東鎮公所自己架了一台 GeoServer 公開出來。
+   *
+   * 縣府的智慧圖資雲（imap.hchg.gov.tw）只有地籍、地價與非都市土地，
+   * 沒有都市計畫；國土測繪中心的公開圖磚（444 層）裡也只有非都市土地
+   * 那兩層。全國性的都市計畫圖資是國土管理署的付費介接服務，所以
+   * 有沒有得看，完全取決於各縣市自己有沒有另外公開 —— 新竹縣目前
+   * 只有竹東鎮這一份。涵蓋範圍就是竹東鎮，出了鎮界就是空的。 */
+  var ZD = 'https://township.planning.hcctt.gov.tw:8080/geoserver/ows';
+
+  // GeoServer 的 WMS 疊圖。走 Leaflet 內建的 L.tileLayer.wms。
+  function wms(id, group, name, layers, attr, opacity, minZoom, note) {
+    return {
+      group: group, id: id, name: name,
+      wms: { base: ZD, layers: layers },
+      opacity: opacity == null ? 0.6 : opacity, on: false,
+      minZoom: minZoom || 12, attr: attr, note: note
+    };
+  }
+
   var OVERLAYS = [
     {
       group: '地籍', id: 'LANDSECT', name: '段籍圖（地段外圍）', url: url('LANDSECT'),
@@ -96,6 +115,16 @@
       '都市計畫圖 © 新竹市政府', 0.85, 9, '含主要計畫區與細部計畫區。'),
     urban('UR_CH', '計畫區範圍　彰化縣', CH, '14', '都市計畫圖 © 彰化縣政府', 0.85, 9),
     urban('UR_ML', '計畫區範圍　苗栗縣', ML, '1', '都市計畫圖 © 苗栗縣政府', 0.85, 9),
+
+    wms('UZ_ZD', '都市計畫', '使用分區　新竹縣竹東鎮', 'ZhuDong:JC_UseZoneAll',
+      '都市計畫圖 © 新竹縣竹東鎮公所', 0.6, 13,
+      '新竹縣只有竹東鎮把都市計畫公開成圖服務，其他鄉鎮市查不到。圖上有分區名稱註記。'),
+    wms('UR_ZD', '都市計畫', '計畫區範圍　新竹縣竹東鎮', 'ZhuDong:JC_Uplan',
+      '都市計畫圖 © 新竹縣竹東鎮公所', 0.9, 9,
+      '竹東都市計畫區的外框（紅色虛線）。框外就是非都市土地。'),
+    wms('UD_ZD', '都市計畫', '細部計畫　新竹縣竹東鎮', 'ZhuDong:JC_UplanDetail',
+      '都市計畫圖 © 新竹縣竹東鎮公所', 0.9, 13,
+      '細部計畫的範圍。'),
 
     // 新竹縣沒有用 export：同一台主機的 export 每張圖磚要八秒，一個畫面
     // 要一分半，等於不能用；而快取圖磚只要 0.1 秒。所以改用兩張快取圖磚 ——
