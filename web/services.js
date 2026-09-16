@@ -119,7 +119,13 @@ window.SERVICES = {
         "UNIT"
       ],
       "source": "新竹縣政府 智慧圖資雲 公開圖服務",
-      "areaKind": "registered"
+      "areaKind": "registered",
+      "landValue": [
+        "AA16"
+      ],
+      "landPrice": [
+        "AA17"
+      ]
     },
     "苗栗縣": {
       "url": "https://ailand.miaoli.gov.tw/server/rest/services/Dynamic/LandNo/MapServer/0/query",

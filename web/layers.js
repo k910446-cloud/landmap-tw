@@ -32,11 +32,12 @@
    */
   // 縣市的 ArcGIS 動態出圖服務：地籍圖本身就帶地號註記，
   // 用 export 端點依畫面範圍即時出圖。層級太小就不出（避免打爆對方主機）。
-  function cadastre(id, name, base, layerIds, attr, note) {
+  function cadastre(id, name, base, layerIds, attr, note, serial) {
     return {
       group: '地籍圖（含地號）', id: id, name: name + '（含地號）',
       exportService: { base: base, layerIds: layerIds },
-      opacity: 0.95, on: false, minZoom: 16, attr: attr, note: note
+      opacity: 0.95, on: false, minZoom: 16, attr: attr, note: note,
+      serial: !!serial
     };
   }
 
@@ -73,19 +74,6 @@
       note: '各級政府所有之土地，宗地層級。'
     },
     {
-      group: '地籍', id: 'HCHG_LAND', name: '宗地界線　新竹縣（快取圖磚，較快）',
-      url: 'https://imap.hchg.gov.tw/arcgis/rest/services/Tiled3857/Land3857/MapServer/tile/{z}/{y}/{x}',
-      opacity: 0.9, on: false, maxNativeZoom: 19,
-      attr: '地籍圖磚 © 新竹縣政府',
-      note: '宗地界線，只涵蓋新竹縣。縣府智慧圖資雲的公開圖磚。'
-    },
-    {
-      group: '地籍', id: 'HCHG_LANDNO', name: '地號註記　新竹縣（快取圖磚）',
-      url: 'https://imap.hchg.gov.tw/arcgis/rest/services/Tiled3857/LandNumber3857/MapServer/tile/{z}/{y}/{x}',
-      opacity: 1, on: false, maxNativeZoom: 19,
-      attr: '地籍圖磚 © 新竹縣政府'
-    },
-    {
       group: '地籍', id: 'MIAOLI_LAND', name: '宗地界線　苗栗縣（快取圖磚，較快）',
       url: 'https://ailand.miaoli.gov.tw/server/rest/services/Tiled3857/Land3857/MapServer/tile/{z}/{y}/{x}',
       opacity: 0.9, on: false, maxNativeZoom: 19,
@@ -109,10 +97,25 @@
     urban('UR_CH', '計畫區範圍　彰化縣', CH, '14', '都市計畫圖 © 彰化縣政府', 0.85, 9),
     urban('UR_ML', '計畫區範圍　苗栗縣', ML, '1', '都市計畫圖 © 苗栗縣政府', 0.85, 9),
 
-    cadastre('CAD_HCHG', '地籍圖　新竹縣',
-      'https://imap.hchg.gov.tw/arcgis/rest/services/Tiled3857/Land3857/MapServer/export',
-      '0,1,2', '地籍圖 © 新竹縣政府',
-      '含段界、地號與地段範圍。同群組的「宗地界線　新竹縣」是快取圖磚，載入較快但沒有地號。'),
+    // 新竹縣沒有用 export：同一台主機的 export 每張圖磚要八秒，一個畫面
+    // 要一分半，等於不能用；而快取圖磚只要 0.1 秒。所以改用兩張快取圖磚 ——
+    // 界線一張、地號註記一張，兩張都開就等於其他縣市的「地籍圖（含地號）」。
+    {
+      group: '地籍圖（含地號）', id: 'HCHG_LAND', name: '地籍圖　新竹縣（宗地界線）',
+      url: 'https://imap.hchg.gov.tw/arcgis/rest/services/Tiled3857/Land3857/MapServer/tile/{z}/{y}/{x}',
+      opacity: 0.9, on: false, maxNativeZoom: 19, serial: true,
+      attr: '地籍圖磚 © 新竹縣政府',
+      note: '新竹縣的宗地界線。地號要另外開下面那一層。'
+        + '這台主機一次只肯服務一個連線，所以圖磚是排隊一張一張載的，'
+        + '會比其他縣市慢一點。'
+    },
+    {
+      group: '地籍圖（含地號）', id: 'HCHG_LANDNO', name: '地籍圖　新竹縣（地號註記）',
+      url: 'https://imap.hchg.gov.tw/arcgis/rest/services/Tiled3857/LandNumber3857/MapServer/tile/{z}/{y}/{x}',
+      opacity: 1, on: false, maxNativeZoom: 19, serial: true,
+      attr: '地籍圖磚 © 新竹縣政府',
+      note: '把地號標在圖上。跟上面那一層一起開。'
+    },
     cadastre('CAD_TP', '地籍圖　臺北市',
       'https://www.historygis.udd.gov.taipei/arcgis/rest/services/Urban/Land_Dynamic/MapServer/export',
       '3,5', '地籍圖 © 臺北市政府'),

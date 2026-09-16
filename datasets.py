@@ -316,12 +316,18 @@ CADASTRE_COUNTIES = {
         'landno8': ['LANDNO8'], 'area': ['AREA'], 'town': ['TNAME'],
         'source': '新竹市政府都市發展處 公開圖服務',
     },
+    # 這台主機一次只肯服務一個連線，同時有第二個就整批回 403；
+    # 查詢端點本身也慢（一筆約二十秒，同一台的圖磚卻只要 0.1 秒）。
+    # 排隊與重試在 start.py 的 open_url 與 web/serial.js。
     '新竹縣': {
         'service': 'arcgis', 'wkid': 102100, 'cors': True,
         'url': ('https://imap.hchg.gov.tw/arcgis/rest/services'
                 '/Tiled3857/Land3857/MapServer/1/query'),
         'sect': ['KCNT'], 'sectcode': ['AA48'], 'landno8': ['AA49'],
         'area': ['AA10'], 'office': ['UNIT'],
+        # 這個圖層的屬性表裡就有地價，不必像苗栗那樣再查一次別的服務
+        'landValue': ['AA16'],     # 公告土地現值 元/m²
+        'landPrice': ['AA17'],     # 公告地價 元/m²
         'source': '新竹縣政府 智慧圖資雲 公開圖服務',
     },
     '苗栗縣': {

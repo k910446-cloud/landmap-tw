@@ -1,7 +1,7 @@
 /* Service worker：只快取 app 本身的殼層，讓它能被「加到主畫面」後離線開啟。
  * 圖磚與 API（/proxy）一律走網路 — 那些由 start.py 端快取。
  */
-var CACHE = 'landmap-tw-shell-v48';
+var CACHE = 'landmap-tw-shell-v49';
 var SHELL = [
   './',
   'index.html',
@@ -10,6 +10,7 @@ var SHELL = [
   'layers.js',
   'services.js',
   'proxy.js',
+  'serial.js',
   'serverless.js',
   'nurban.js',
   'prices.js',

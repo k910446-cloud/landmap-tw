@@ -107,11 +107,22 @@
     return null;
   }
 
+  // 地價有的縣市就寫在地籍圖層的屬性表裡（新竹縣），有的要另外查一次
+  // 別的服務（苗栗縣的 detail）。這裡先讀屬性表，detail 有值再蓋過去。
+  function landValues(cfg, attrs, out) {
+    ['landValue', 'landPrice'].forEach(function (k) {
+      var v = parseFloat(pick(attrs, cfg[k] || [], true));
+      if (!isNaN(v) && v > 0) out[k] = v;
+    });
+  }
+
   function esriQuery(cfg, params) {
     var qs = Object.keys(params).map(function (k) {
       return encodeURIComponent(k) + '=' + encodeURIComponent(params[k]);
     }).join('&');
-    return fetch(endpoint(cfg, qs)).then(function (r) {
+    // 走 SERIAL.fetch：對「一次只准一個連線」的主機（新竹縣）會自動排隊與
+    // 重試，其他縣市原樣走原生 fetch。見 serial.js。
+    return SERIAL.fetch(endpoint(cfg, qs)).then(function (r) {
       if (!r.ok) throw new Error('HTTP ' + r.status);
       return r.json();
     }).then(function (d) {
@@ -163,7 +174,7 @@
       var base = window.PROXY_URL.replace(/\/+$/, '');
       url = base + (base.indexOf('?') >= 0 ? '&' : '?') + 'u=' + encodeURIComponent(url);
     }
-    return fetch(url).then(function (r) { return r.json(); }).then(function (data) {
+    return SERIAL.fetch(url).then(function (r) { return r.json(); }).then(function (data) {
       var res = (data.results || [])[0];
       if (!res) return null;
       var a = res.attributes || {};
@@ -211,6 +222,7 @@
       if (rings && rings.length) {
         out.rings = [rings[0].map(function (p) { return [p[1], p[0]]; })];
       }
+      landValues(cfg, attrs, out);
       function finish(detail) {
         // 面積優先序：登記面積 > 服務給的 > 自己по圖形算，並標明是哪一種
         var a = NaN;
@@ -383,6 +395,7 @@
           return r.map(function (p) { return [p[1], p[0]]; });
         })
       };
+      landValues(cfg, attrs, out);
       // 面積來源與點位查詢用同一套規則 —— 兩條路徑給不同的數字才是最糟的
       var cx = 0, cy = 0;
       if (rings.length) {

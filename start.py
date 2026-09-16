@@ -38,7 +38,9 @@ import zipfile
 from collections import OrderedDict
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
+import bonuses
 import datasets as DS
+import far
 import geo
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -61,6 +63,45 @@ UA = "landmap-tw/1.0 (local desktop app; +https://github.com/)"
 # 會直接被拒。這裡只關掉 strict 附加檢查, 仍然完整驗證憑證鏈與主機名稱。
 _SSL_CTX = ssl.create_default_context()
 _SSL_CTX.verify_flags &= ~ssl.VERIFY_X509_STRICT
+
+# 一次只肯服務一個連線的主機。
+#
+# 新竹縣智慧圖資雲（imap.hchg.gov.tw）的每個端點單獨打都正常，但同時有
+# 第二個連線就整批回 403 —— 一頁 big5 的錯誤頁，不是 ArcGIS 的錯誤 JSON。
+# 實測：一次一個連六次全部 200，同時十二個全部 403。
+#
+# 所以對這些主機加一把鎖，一次只放一個請求出去；被擋到就退一下再試。
+# 前端也有同一套處理（web/serial.js），因為圖磚是瀏覽器直接去要的。
+SERIAL_HOSTS = ("imap.hchg.gov.tw",)
+_serial_lock = threading.Lock()
+_SERIAL_RETRY = (0.4, 1.2, 2.5)
+
+
+def open_url(req, timeout):
+    """urlopen 的外皮：對限制連線數的主機排隊並重試，其餘原樣通過。"""
+    url = req.full_url if hasattr(req, "full_url") else str(req)
+    if not any(h in url for h in SERIAL_HOSTS):
+        return urllib.request.urlopen(req, timeout=timeout, context=_SSL_CTX)
+    # 這些主機不只限制連線數，查詢端點本身也慢：新竹縣不論查什麼，
+    # 一筆固定要十幾二十秒（同一台的圖磚是 0.1 秒，不是網路問題）。
+    # 沿用一般的 25 秒會在正常情況下逾時，所以放寬。
+    timeout = max(timeout, 60)
+    with _serial_lock:
+        last = None
+        for i in range(len(_SERIAL_RETRY) + 1):
+            try:
+                return urllib.request.urlopen(req, timeout=timeout, context=_SSL_CTX)
+            except urllib.error.HTTPError as e:
+                # 403 在這台主機上的意思是「同時連線太多」，等一下就會好
+                if e.code != 403 or i >= len(_SERIAL_RETRY):
+                    raise
+                last = e
+            except Exception:
+                if i >= len(_SERIAL_RETRY):
+                    raise
+            time.sleep(_SERIAL_RETRY[i])
+        raise last
+
 
 _CACHE_MAX = 1500
 _cache = OrderedDict()
@@ -314,7 +355,7 @@ def query_arcgis(cfg, x, y, lon=None, lat=None, want_geometry=False):
         params["outSR"] = "4326"
     qs = urllib.parse.urlencode(params)
     req = urllib.request.Request(cfg["url"] + "?" + qs, headers={"User-Agent": UA})
-    with urllib.request.urlopen(req, timeout=25, context=_SSL_CTX) as r:
+    with open_url(req, 25) as r:
         data = json.loads(r.read().decode("utf-8", "replace"))
     if data.get("error"):
         raise RuntimeError(data["error"].get("message", "服務回應錯誤"))
@@ -373,6 +414,18 @@ def format_landno(cfg, attrs):
     return "%d-%d" % (m, c) if c else "%d" % m
 
 
+def land_values(cfg, attrs, out):
+    """把屬性表裡的公告土地現值／公告地價填進 out（有才填）。"""
+    for key in ("landValue", "landPrice"):
+        v = pick_value(attrs, cfg.get(key, []), exact=True)
+        try:
+            f = float(v)
+        except (TypeError, ValueError):
+            continue
+        if f > 0:
+            out[key] = f
+
+
 def fetch_parcel_detail(cfg, x, y):
     """向縣市的逐筆土地服務取登記面積與公告地價。
 
@@ -400,7 +453,7 @@ def fetch_parcel_detail(cfg, x, y):
     try:
         req = urllib.request.Request(d["identify"] + "?" + urllib.parse.urlencode(params),
                                      headers={"User-Agent": UA})
-        with urllib.request.urlopen(req, timeout=20, context=_SSL_CTX) as r:
+        with open_url(req, 20) as r:
             data = json.loads(r.read().decode("utf-8", "replace"))
     except Exception:
         return None          # 取不到就算了，不要讓主查詢跟著失敗
@@ -468,6 +521,9 @@ def query_cadastre(lat, lon, county, sect_hint=None):
     # areaFrom 會一路帶到畫面上標明是哪一種 —— 圖形面積跟登記面積本來就
     # 會差一點，講清楚才不會讓人以為算錯。
     a = None
+    # 地價有的縣市就寫在地籍圖層的屬性表裡（新竹縣），有的要另外查一次
+    # 別的服務（苗栗縣的 detail）。先讀屬性表，detail 有值再蓋過去。
+    land_values(cfg, attrs, out)
     detail = fetch_parcel_detail(cfg, x, y)
     if detail:
         if detail.get("area"):
@@ -561,7 +617,7 @@ def find_parcel(county, sect, land_no):
     url = cfg["url"] + "?" + urllib.parse.urlencode(params)
     try:
         req = urllib.request.Request(url, headers={"User-Agent": UA})
-        with urllib.request.urlopen(req, timeout=25, context=_SSL_CTX) as r:
+        with open_url(req, 25) as r:
             data = json.loads(r.read().decode("utf-8", "replace"))
         if data.get("error"):
             raise RuntimeError(data["error"].get("message", "服務回應錯誤"))
@@ -588,6 +644,7 @@ def find_parcel(county, sect, land_no):
     # 面積來源與點位查詢用同一套規則：登記面積 > 服務給的 > 自己算，
     # 並且標明是哪一種。兩條路徑給出不同的數字才是最糟的。
     a = None
+    land_values(cfg, attrs, out)
     if rings:
         cx = sum(p[0] for p in rings[0]) / len(rings[0])
         cy = sum(p[1] for p in rings[0]) / len(rings[0])
@@ -653,7 +710,7 @@ def query_parcels(county, xmin, ymin, xmax, ymax, limit=1200):
     url = cfg["url"] + "?" + urllib.parse.urlencode(params)
     req = urllib.request.Request(url, headers={"User-Agent": UA})
     try:
-        with urllib.request.urlopen(req, timeout=30, context=_SSL_CTX) as r:
+        with open_url(req, 30) as r:
             data = json.loads(r.read().decode("utf-8", "replace"))
     except Exception as e:
         return {"status": "error", "county": county,
@@ -762,6 +819,203 @@ def query_zoning(lat, lon, county):
     return {"lat": lat, "lon": lon, "twd97": {"x": round(x, 2), "y": round(y, 2)}, "layers": out}
 
 
+def ring_centroid(ring):
+    """多邊形的面積形心。ring 的點是 [lat, lon]。
+
+    一開始用「所有頂點取平均」，凹形宗地（L 形、畸零地）的平均點會
+    落到基地外面，拿去查分區就查成隔壁的分區了。面積形心對絕大多數
+    宗地都會落在內部，退化情形（面積為 0）再退回頂點平均。
+    """
+    if not ring:
+        return None
+    n = len(ring)
+    a = cx = cy = 0.0
+    for i in range(n):
+        y0, x0 = ring[i]
+        y1, x1 = ring[(i + 1) % n]
+        cross = x0 * y1 - x1 * y0
+        a += cross
+        cx += (x0 + x1) * cross
+        cy += (y0 + y1) * cross
+    if abs(a) < 1e-12:
+        return [sum(p[0] for p in ring) / n, sum(p[1] for p in ring) / n]
+    a *= 0.5
+    return [cy / (6 * a), cx / (6 * a)]
+
+
+def zone_at(lat, lon, county):
+    """一個點的使用分區、建蔽率、容積率。
+
+    先看都市計畫分區，沒有才看非都市土地分區與編定。
+
+    建蔽率、容積率只有部分縣市的圖層有屬性（桃園、臺中、苗栗、高雄、
+    臺北）。查不到就留 None —— 由使用者自己填，或等法規模組把該縣市
+    土管要點的數字帶進來。這裡絕對不套用「住宅區大概 60%／200%」
+    這種印象值，那正是使用者說的瞎猜。
+    """
+    z = query_zoning(lat, lon, county)
+    layers = {l["key"]: l for l in z.get("layers", [])}
+
+    urban = layers.get("urban_zone") or {}
+    nurban = layers.get("nurban_zone") or {}
+    desig = layers.get("nurban_desig") or {}
+
+    def extra(item, label):
+        for pair in (item.get("extras") or []):
+            if pair and pair[0] == label:
+                return pair[1]
+        return None
+
+    out = {"lat": lat, "lon": lon, "county": county, "layers": z.get("layers", [])}
+
+    if urban.get("status") == "ok":
+        cov_raw = extra(urban, "建蔽率")
+        far_raw = extra(urban, "容積率")
+        cov = far.parse_ratio(cov_raw)
+        far_v = far.parse_ratio(far_raw)
+        src = {"kind": "圖資", "name": urban.get("source"),
+               "url": urban.get("sourceUrl"),
+               "note": "%s 都市計畫使用分區圖屬性" % (county or "")}
+        out.update({
+            "kind": "urban",
+            "name": urban.get("value"),
+            "code": urban.get("code"),
+            "plan": extra(urban, "都市計畫"),
+            "detailPlan": extra(urban, "細部計畫"),
+            "note": extra(urban, "備註"),
+            "capLimit": extra(urban, "上限容積"),
+            "coverage": ({"value": cov, "source": src, "raw": cov_raw}
+                         if far.ratio_is_sane(cov, "coverage") else
+                         {"value": None, "raw": cov_raw,
+                          "note": "圖資未提供建蔽率" if cov is None
+                                  else "圖資的建蔽率值 %s 不合理，請人工確認" % cov_raw}),
+            "far": ({"value": far_v, "source": src, "raw": far_raw}
+                    if far.ratio_is_sane(far_v, "far") else
+                    {"value": None, "raw": far_raw,
+                     "note": "圖資未提供容積率" if far_v is None
+                             else "圖資的容積率值 %s 不合理，請人工確認" % far_raw}),
+            "source": src,
+        })
+        return out
+
+    if nurban.get("status") == "ok":
+        d = desig.get("value") if desig.get("status") == "ok" else None
+        # 非都市土地的建蔽率、容積率是法規查表查得到的（非都市土地使用管制
+        # 規則第9條第1項，只看使用地類別），不必要求使用者自己填。
+        nu = bonuses.nonurban_intensity(d)
+        out.update({
+            "kind": "nurban",
+            "name": nurban.get("value"),
+            "code": nurban.get("code"),
+            "designation": d,
+            "designationCode": desig.get("code") if desig.get("status") == "ok" else None,
+            "coverage": nu["coverage"] if nu else {
+                "value": None,
+                "note": "查不到使用地類別，無法由非都市土地使用管制規則第9條查表，"
+                        "請自行填入"},
+            "far": nu["far"] if nu else {"value": None, "note": "同上"},
+            "intensityNote": nu.get("note") if nu else None,
+            "source": {"kind": "圖資", "name": nurban.get("source"),
+                       "url": nurban.get("sourceUrl")},
+        })
+        return out
+
+    out.update({
+        "kind": "unknown",
+        "name": None,
+        "coverage": {"value": None, "note": "查不到分區"},
+        "far": {"value": None, "note": "查不到分區"},
+        "message": (urban.get("message") or nurban.get("message")
+                    or "此點查不到使用分區資料"),
+    })
+    return out
+
+
+MAX_PARCELS = 40
+
+
+def site_lookup(county, parcels, zone_per_parcel=True):
+    """一串「段＋地號」→ 每筆的面積、形心，以及基地的使用分區與法定強度。
+
+    這是「丟地號就給我分析」的第一步。刻意每一筆都各自查分區：
+    基地跨兩個使用分區在實務上很常見（尤其是臨街的商業區帶住宅區），
+    如果只用第一筆的分區去套整塊地，容積會算錯而且看不出來。
+    查到不只一種分區時，回傳的 zones 會有多筆，由使用者決定怎麼分算。
+    """
+    county = norm_county(county)
+    parcels = (parcels or [])[:MAX_PARCELS]
+    if not parcels:
+        return {"status": "bad-input", "message": "請至少給一筆段名與地號"}
+
+    items, total, zones = [], 0.0, []
+    for p in parcels:
+        sect = (p.get("sect") or "").strip()
+        no = (p.get("no") or "").strip()
+        r = find_parcel(county, sect, no)
+        item = {"sect": sect or r.get("sect"), "no": no,
+                "status": r.get("status"), "message": r.get("message")}
+        if r.get("status") == "ok":
+            item.update({
+                "sect": r.get("sect") or sect,
+                "sectCode": r.get("sectCode"),
+                "landNo": r.get("landNo"),
+                "town": r.get("town"),
+                "areaM2": r.get("areaM2"),
+                "areaPing": r.get("areaPing"),
+                "areaFrom": r.get("areaFrom"),
+                "landValue": r.get("landValue"),
+                "matches": r.get("matches"),
+                "rings": r.get("rings"),
+            })
+            if r.get("areaM2"):
+                total += r["areaM2"]
+            rings = r.get("rings") or []
+            c = ring_centroid(rings[0]) if rings else None
+            item["centroid"] = c
+            if c and zone_per_parcel:
+                try:
+                    z = zone_at(c[0], c[1], county)
+                    z.pop("layers", None)
+                    item["zone"] = z
+                    if z.get("name"):
+                        zones.append(z)
+                except Exception as e:
+                    item["zoneError"] = "查詢分區失敗：%r" % (e,)
+        items.append(item)
+
+    # 依分區名稱歸類，讓前端能一眼看出基地是不是跨分區
+    grouped = OrderedDict()
+    for z in zones:
+        grouped.setdefault(z["name"], z)
+
+    ok = [i for i in items if i.get("status") == "ok"]
+    z0 = list(grouped.values())[0] if grouped else {}
+    # 位置屬實才套地方法規：地號真的查到了，才代表這塊地確實在這個縣市。
+    # 使用者在選單上選「苗栗縣」不構成證明 —— 查不到就不給地方獎勵。
+    programs = bonuses.applicable(
+        county=county,
+        urban=(z0.get("kind") != "nurban"),
+        zone_name=z0.get("name"),
+        designation=z0.get("designation"),
+        area_m2=total or None,
+        location_confirmed=bool(ok) and bool(grouped),
+        mixed_zone=len(grouped) > 1,
+    )
+    return {
+        "status": "ok" if ok else "not-found",
+        "bonusPrograms": programs,
+        "county": county,
+        "parcels": items,
+        "found": len(ok),
+        "requested": len(items),
+        "totalAreaM2": round(total, 2) if total else 0,
+        "totalAreaPing": round(total / PING, 2) if total else 0,
+        "areaComplete": bool(ok) and all(i.get("areaM2") for i in ok),
+        "zones": list(grouped.values()),
+        "mixedZone": len(grouped) > 1,
+    }
+
+
 def dataset_status():
     out = []
     for key, ds in DS.DATASETS.items():
@@ -807,6 +1061,10 @@ class Handler(SimpleHTTPRequestHandler):
             return self.handle_parcels(parsed)
         if parsed.path == "/api/parcel-find":
             return self.handle_parcel_find(parsed)
+        if parsed.path == "/api/site":
+            return self.handle_site(parsed)
+        if parsed.path == "/api/bonuses":
+            return self.handle_bonuses(parsed)
         if parsed.path == "/api/data":
             return self.json_ok({"datasets": dataset_status()})
         if parsed.path == "/api/data/fetch":
@@ -863,6 +1121,90 @@ class Handler(SimpleHTTPRequestHandler):
             return self.json_ok(find_parcel(county, sect, no))
         except Exception as e:
             return self.fail(500, "查詢失敗：%r" % (e,))
+
+    def handle_site(self, parsed):
+        """段＋地號 → 面積、分區、建蔽率、容積率。
+
+        兩種寫法：
+            /api/site?county=新竹市&sect=舊社段&no=10,11-1     同一段多筆
+            /api/site?county=新竹市&p=舊社段:10&p=中寮段:783-2  跨段
+        """
+        q = urllib.parse.parse_qs(parsed.query)
+        county = (q.get("county") or [""])[0]
+        parcels = []
+        for spec in (q.get("p") or []):
+            if ":" in spec:
+                s, n = spec.split(":", 1)
+                parcels.append({"sect": s, "no": n})
+        sect = (q.get("sect") or [""])[0]
+        if sect:
+            for n in (q.get("no") or [""])[0].split(","):
+                if n.strip():
+                    parcels.append({"sect": sect, "no": n.strip()})
+        if not parcels:
+            return self.fail(400, "請給 sect + no，或用 p=段名:地號")
+        # 每筆地號要打 1 次地籍 + 1 次分區查詢，比一般查詢重得多
+        if not rate_ok(self.client_ip(), "site", 30, 60):
+            return self.fail(429, "查詢太頻繁，請稍後再試")
+        try:
+            return self.json_ok(site_lookup(county, parcels))
+        except Exception as e:
+            return self.fail(500, "查詢失敗：%r" % (e,))
+
+    def handle_bonuses(self, parsed):
+        """依基地條件回傳適用的容積獎勵法規與上限。
+
+        道路寬度與重建計畫申請日都會改變答案（容積移轉的級距、危老的時程
+        獎勵），但都不在圖資裡，所以做成獨立端點讓前端隨時重問。
+        """
+        q = urllib.parse.parse_qs(parsed.query)
+
+        def one(k, default=None):
+            v = (q.get(k) or [""])[0]
+            return v or default
+
+        def fnum(k):
+            try:
+                return float(one(k) or "")
+            except ValueError:
+                return None
+
+        try:
+            return self.json_ok(bonuses.applicable(
+                county=norm_county(one("county", "")),
+                urban=(one("urban", "1") != "0"),
+                zone_name=one("zone"),
+                designation=one("designation"),
+                area_m2=fnum("area"),
+                road_width_m=fnum("road"),
+                apply_date=one("date"),
+                frontage_m=fnum("frontage"),
+                location_confirmed=(one("confirmed", "1") != "0"),
+                mixed_zone=(one("mixed", "0") == "1"),
+            ))
+        except Exception as e:
+            return self.fail(500, "查詢失敗：%r" % (e,))
+
+    def do_POST(self):
+        parsed = urllib.parse.urlsplit(self.path)
+        if not rate_ok(self.client_ip(), "api", 240, 60):
+            return self.fail(429, "請求太頻繁，請稍後再試")
+        if parsed.path != "/api/far":
+            return self.fail(404, "沒有這個位址")
+        try:
+            n = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            return self.fail(400, "Content-Length 格式錯誤")
+        if n <= 0 or n > 256 * 1024:
+            return self.fail(400, "請求內容長度不合理")
+        try:
+            body = json.loads(self.rfile.read(n).decode("utf-8", "replace"))
+        except Exception:
+            return self.fail(400, "請求內容不是合法的 JSON")
+        try:
+            return self.json_ok(far.analyze(body))
+        except Exception as e:
+            return self.fail(500, "試算失敗：%r" % (e,))
 
     def client_ip(self):
         # 經過 Cloudflare Tunnel 時真實來源在這個標頭裡
@@ -931,7 +1273,7 @@ class Handler(SimpleHTTPRequestHandler):
             },
         )
         try:
-            with urllib.request.urlopen(req, timeout=25, context=_SSL_CTX) as r:
+            with open_url(req, 25) as r:
                 raw = r.read()
                 if r.headers.get("Content-Encoding") == "gzip":
                     try:

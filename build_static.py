@@ -29,7 +29,10 @@ FIELD_KEYS = ("url", "wkid", "sect", "sectcode", "landno", "landno8",
               "mother", "child", "area", "town", "office", "source",
               # 面積是登記面積還是圖形面積，以及能不能另外取得登記面積 ——
               # 前端要照實標示，不能讓人以為圖形面積就是登記面積
-              "areaKind", "detail")
+              "areaKind", "detail",
+              # 地價：有的縣市寫在地籍圖層的屬性表裡（新竹縣），
+              # 有的要另外查一次別的服務（苗栗縣走 detail）
+              "landValue", "landPrice")
 
 
 def pick(cfg):

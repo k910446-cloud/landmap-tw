@@ -226,6 +226,43 @@
     }
   });
 
+  /* 有些縣市的主機一次只肯服務一個連線（新竹縣就是），同時要十幾張圖磚
+   * 會整批被回 403、整層空白。這個 mixin 把圖磚改成走 serial.js 的隊伍：
+   * 先 fetch 成 blob、排隊、必要時重試，再交給 <img> 顯示。
+   *
+   * 代價是每張圖磚多一次 blob 轉換與一個 object URL（換圖磚時要記得回收），
+   * 換來的是「慢慢地出現」而不是「什麼都沒有」。 */
+  var SERIAL_TILE = {
+    createTile: function (coords, done) {
+      var img = document.createElement('img');
+      var self = this;
+      img.alt = '';
+      SERIAL.fetch(this.getTileUrl(coords)).then(function (r) {
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return r.blob();
+      }).then(function (blob) {
+        img._objUrl = URL.createObjectURL(blob);
+        img.onload = function () { done(null, img); };
+        img.onerror = function () { done(new Error('圖磚解碼失敗'), img); };
+        img.src = img._objUrl;
+      }).catch(function (e) {
+        // done 一定要叫到，否則 Leaflet 會一直以為這張還在載入中
+        if (self._map) done(e, img);
+      });
+      return img;
+    },
+    _removeTile: function (key) {
+      var t = this._tiles[key];
+      if (t && t.el && t.el._objUrl) {
+        URL.revokeObjectURL(t.el._objUrl);
+        t.el._objUrl = null;
+      }
+      L.TileLayer.prototype._removeTile.call(this, key);
+    }
+  };
+  L.TileLayer.Serial = L.TileLayer.extend(SERIAL_TILE);
+  L.TileLayer.SerialArcGISExport = L.TileLayer.ArcGISExport.extend(SERIAL_TILE);
+
   function makeTile(url, opts) {
     // 不要設 crossOrigin：顯示用的圖磚不需要它，而有些縣市的圖磚主機
     // 沒送 Access-Control-Allow-Origin，設了反而整層被瀏覽器擋掉。
@@ -265,13 +302,22 @@
   // 疊圖
   function buildOverlay(o, opts) {
     if (o.exportService) {
-      return new L.TileLayer.ArcGISExport('', Object.assign({
+      var Cls = o.serial ? L.TileLayer.SerialArcGISExport : L.TileLayer.ArcGISExport;
+      return new Cls('', Object.assign({
         base: o.exportService.base,
         layerIds: o.exportService.layerIds,
         maxZoom: 20,
         minZoom: o.minZoom || 0,
         attribution: o.attr || CATALOG.attribution
       }, opts));
+    }
+    if (o.serial) {
+      return new L.TileLayer.Serial(o.url, Object.assign({
+        maxNativeZoom: CATALOG.maxNativeZoom,
+        maxZoom: 20,
+        attribution: CATALOG.attribution,
+        detectRetina: false
+      }, tileOpts(o, opts)));
     }
     return makeTile(o.url, tileOpts(o, opts));
   }
@@ -1127,12 +1173,20 @@
     return String(Math.round(v)).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
   }
 
+  /* 有些縣市的查詢端點就是很慢 —— 新竹縣智慧圖資雲不論查什麼，
+   * 一筆固定要十幾二十秒（同一台主機的圖磚是 0.1 秒，所以不是網路問題）。
+   * 不先講的話，使用者會以為當掉了。 */
+  var SLOW_COUNTIES = { '新竹縣': '這個縣市的查詢主機較慢，一筆大約要 20 秒' };
+
   function runCadastre(ll, county, sectHint) {
     var seq = ++cadSeq;
     showParcel(null);
     var host = $('#cadastre');
     host.textContent = '';
     host.appendChild(el('p', 'empty', '查詢中…'));
+    if (SLOW_COUNTIES[county]) {
+      host.appendChild(el('p', 'fineprint', SLOW_COUNTIES[county]));
+    }
 
     backendReady.then(function () {
       return hasBackend
