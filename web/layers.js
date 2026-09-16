@@ -178,6 +178,34 @@
       'https://ailand.miaoli.gov.tw/server/rest/services/Dynamic/LandNo/MapServer/export',
       '0', '地籍圖 © 苗栗縣政府'),
 
+    /* 土地開發：區段徵收、市地重劃、農村社區土地重劃。
+     *
+     * 內政部把「土地開發資訊系統」併進了地籍圖資網路便民服務系統，
+     * 全國一千一百多個開發區的範圍以公開 WMTS 發布（免申請、免金鑰、
+     * 有送 CORS 標頭）。圖面本身就帶開發區名稱註記，
+     * 例如湖口(王爺壟)區段徵收。
+     *
+     * 這跟「都市計畫區範圍」是兩回事：都市計畫區講的是這塊地適用哪一套
+     * 法規，重劃／徵收講的是這塊地有沒有被納入某個開發案 ——
+     * 對做開發的人來說兩個都要看。 */
+    {
+      group: '土地開發', id: 'DEV_A4', name: '區段徵收', on: false, opacity: 0.75,
+      url: 'https://publands.land.moi.gov.tw/R02map/wmts/USEA4/default/EPSG:3857/{z}/{y}/{x}',
+      maxNativeZoom: 20, attr: '開發區圖資 © 內政部地政司',
+      note: '全國已完成、辦理中及規劃中的區段徵收開發區，圖上有開發區名稱。'
+    },
+    {
+      group: '土地開發', id: 'DEV_B4', name: '市地重劃', on: false, opacity: 0.75,
+      url: 'https://publands.land.moi.gov.tw/R02map/wmts/USEB4/default/EPSG:3857/{z}/{y}/{x}',
+      maxNativeZoom: 20, attr: '開發區圖資 © 內政部地政司',
+      note: '全國市地重劃區，圖上有重劃區名稱。'
+    },
+    {
+      group: '土地開發', id: 'DEV_D4', name: '農村社區土地重劃', on: false, opacity: 0.75,
+      url: 'https://publands.land.moi.gov.tw/R02map/wmts/USED4/default/EPSG:3857/{z}/{y}/{x}',
+      maxNativeZoom: 20, attr: '開發區圖資 © 內政部地政司'
+    },
+
     {
       group: '使用分區 / 類別', id: 'nURBAN1', name: '非都市土地使用分區圖', url: url('nURBAN1'),
       opacity: 0.55, on: true, sample: true,
