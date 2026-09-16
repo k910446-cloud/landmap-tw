@@ -301,6 +301,8 @@
 
   // 疊圖
   function buildOverlay(o, opts) {
+    // 向量疊圖：資料是自己的 JSON，不是別人的圖磚
+    if (o.vector === 'urbanArea') return UrbanArea.layer();
     // GeoServer 的 WMS：不是圖磚服務，依每一塊的範圍即時出圖。
     // 新竹縣竹東鎮的都市計畫只有這種發布方式。
     if (o.wms) {
@@ -1285,6 +1287,25 @@
   // 圖磚只給得出顏色。名稱來自政府資料開放平臺的 SHP 屬性表，
   // 由 start.py 按縣市下載後在本機做點在多邊形內的判斷。
 
+  /* 這個點落在哪一個都市計畫區裡。
+   *
+   * 這是做土地開發時的第一個問題 —— 框內走都市計畫法與各縣市施行細則，
+   * 框外走區域計畫法與非都市土地使用管制規則，兩套法規完全不同。
+   * 資料是自己的向量外框（urbanarea.js），所以不必等任何外部服務。 */
+  function showUrbanArea(ll, host, seq, alive) {
+    UrbanArea.find(ll.lat, ll.lng).then(function (a) {
+      if (!alive(seq) || !a) return;
+      var box = el('div', 'zrow');
+      var big = el('div', 'zval');
+      big.appendChild(el('b', null, a.name));
+      box.appendChild(big);
+      box.appendChild(el('div', 'fineprint',
+        '此點在都市計畫區內，適用都市計畫法與' + a.county + '的施行細則／自治條例。'));
+      box.appendChild(el('div', 'fineprint', a.notice || ''));
+      host.insertBefore(box, host.firstChild);
+    }).catch(function () { /* 沒收錄這個縣市就當作沒有，不吵使用者 */ });
+  }
+
   var zoningSeq = 0;
   function runZoning(ll, county) {
     var seq = ++zoningSeq;
@@ -1300,6 +1321,7 @@
     }).then(function (d) {
       if (seq !== zoningSeq) return;
       host.textContent = '';
+      showUrbanArea(ll, host, seq, function (s) { return s === zoningSeq; });
       // 有答案的排前面；「這個縣市沒有這份資料」之類的收到最後，免得洗版
       var rank = { ok: 0, 'needs-download': 1, 'no-feature': 2, error: 3, unavailable: 4 };
       var layers = (d.layers || []).slice().sort(function (a, b) {
