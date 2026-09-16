@@ -2552,9 +2552,51 @@
   renderMarks();
   renderPalette();
 
+  /* 有新版時主動講一聲。
+   *
+   * 為什麼要有：這個 App 常常在改，但頁面一旦開著就不會自己換新版 ——
+   * 圖層清單是載入時建好的，改過的東西要重新整理才看得到。
+   * 使用者不會知道該重新整理，只會覺得「我明明說要移除的東西還在」。
+   * 所以偵測到新版就跳一條可以點的提示，點了就換過去。 */
+  function watchForUpdate(reg) {
+    function offer(worker) {
+      if (!worker) return;
+      worker.addEventListener('statechange', function () {
+        // installed 且已經有 controller = 這是「更新」而不是第一次安裝
+        if (worker.state === 'installed' && navigator.serviceWorker.controller) {
+          showUpdateBar();
+        }
+      });
+    }
+    offer(reg.installing);
+    reg.addEventListener('updatefound', function () { offer(reg.installing); });
+    // 使用者切回這個分頁時再問一次上游有沒有新版
+    document.addEventListener('visibilitychange', function () {
+      if (!document.hidden) reg.update().catch(function () {});
+    });
+  }
+
+  var updateBar = null;
+  function showUpdateBar() {
+    if (updateBar) return;
+    updateBar = el('button', 'updatebar', '有新版本，點一下更新');
+    updateBar.type = 'button';
+    updateBar.addEventListener('click', function () { location.reload(); });
+    document.body.appendChild(updateBar);
+  }
+
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', function () {
-      navigator.serviceWorker.register('sw.js').catch(function () { /* 非致命 */ });
+      navigator.serviceWorker.register('sw.js')
+        .then(watchForUpdate)
+        .catch(function () { /* 非致命 */ });
+    });
+    // 新的 service worker 接手之後，頁面上的程式碼還是舊的 —— 換過去
+    var reloading = false;
+    navigator.serviceWorker.addEventListener('controllerchange', function () {
+      if (reloading) return;
+      reloading = true;
+      showUpdateBar();
     });
   }
 })();

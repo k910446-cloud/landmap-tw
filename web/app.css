@@ -460,3 +460,10 @@ button.projname:active{transform:translateY(1px)}
   #far-site .far-lab{display:block !important}
   .card{break-inside:avoid;box-shadow:none;border:1px solid #ccc}
 }
+
+/* 有新版時的提示 —— 蓋在最上層，但不擋住地圖中央 */
+.updatebar{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(env(safe-area-inset-bottom) + 14px);
+  z-index:1200;border:0;border-radius:999px;padding:9px 18px;cursor:pointer;
+  background:var(--brand-2,#2b7a4b);color:#fff;font-size:13px;font-weight:600;
+  box-shadow:0 4px 14px rgba(0,0,0,.28)}
+.updatebar:active{opacity:.85}
