@@ -151,11 +151,37 @@ def drop_repeats(ring):
     return out
 
 
-def build(op, token, code, name, only=None):
+class Session(object):
+    """連線與 token 放在一起 —— 全國跑一輪要一個多小時，token 會在中途過期。
+
+    過期的症狀是每一個計畫區都查不到圖形；如果不處理，跑完會得到一堆
+    空檔案，而且看起來像「政府沒有這些資料」。所以失敗就換一張新的
+    token 重試一次，真的再失敗才記成略過。
+    """
+
+    def __init__(self):
+        self.op = opener()
+        self.token = get_token(self.op)
+
+    def renew(self):
+        self.op = opener()
+        self.token = get_token(self.op)
+
+    def rings(self, plan_code):
+        try:
+            return rings_of(self.op, self.token, plan_code)
+        except Exception:
+            self.renew()
+            time.sleep(PAUSE)
+            return rings_of(self.op, self.token, plan_code)
+
+
+def build(sess, code, name, only=None):
     got, failed = [], []
+    op, token = sess.op, sess.token
     for plan_code, plan_name in plans(op, token, code):
         try:
-            rings = rings_of(op, token, plan_code)
+            rings = sess.rings(plan_code)
         except Exception as e:
             failed.append("%s %s（%s）" % (plan_code, plan_name, str(e)[:40]))
             time.sleep(PAUSE)
@@ -209,8 +235,8 @@ def main():
     ap.add_argument("--county", action="append", help="只跑指定縣市（可重複）")
     args = ap.parse_args()
 
-    op = opener()
-    token = get_token(op)
+    sess = Session()
+    op, token = sess.op, sess.token
     cty = counties(op)
     if args.county:
         want = set(args.county)
@@ -225,7 +251,16 @@ def main():
 
     total_plans = 0
     for code, name in cty:
-        path, failed = build(op, token, code, name)
+        try:
+            path, failed = build(sess, code, name)
+        except Exception as e:
+            # 這個縣市整個失敗（多半是 token 過期）——換一張再來一次
+            sess.renew()
+            try:
+                path, failed = build(sess, code, name)
+            except Exception as e2:
+                print("%-5s 失敗：%s" % (name, str(e2)[:60]))
+                continue
         if path is None:
             print("%-5s 一個計畫區都沒取到" % name)
         else:
