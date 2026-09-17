@@ -34,8 +34,8 @@ jobs:
     name: 法規與附表一
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.x'
 
@@ -80,8 +80,8 @@ jobs:
     name: 實價登錄
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.x'
 
@@ -89,7 +89,7 @@ jobs:
       # 用 restore/save 分開寫，沒有新資料時就不重存那 500 MB。
       - name: 取回原始檔快取
         id: cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           path: data/lvr
           key: lvr-seasons
@@ -117,7 +117,7 @@ jobs:
 
       - name: 更新原始檔快取
         if: steps.check.outputs.code == '1' || inputs.force
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v6
         with:
           path: data/lvr
           key: lvr-seasons-${{ github.run_id }}
@@ -139,8 +139,8 @@ jobs:
     name: 都市計畫區範圍
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.x'
 
