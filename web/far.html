@@ -1,0 +1,1443 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>開發面積預估表</title>
+<style>
+/* 版面照建築師事務所的開發面積預估表：A4 直式、密排、每列都寫算式。
+   螢幕上是工具，列印出來就是可以直接給業主的一張表。 */
+:root{
+  --ink:#111; --ink-2:#555; --ink-3:#888; --line:#c9c9c9; --line-2:#e6e6e6;
+  --bg:#f2f2f0; --paper:#fff; --accent:#b3541e; --ok:#2f6b52;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  background:var(--bg); color:var(--ink);
+  font:14px/1.6 "Noto Sans TC","PingFang TC","Microsoft JhengHei",system-ui,sans-serif;
+}
+
+/* ── 輸入列（列印時隱藏）── */
+#bar{
+  position:sticky;top:0;z-index:10;background:#fff;border-bottom:1px solid var(--line);
+  padding:10px 14px;display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end;
+  box-shadow:0 1px 6px rgba(0,0,0,.06)
+}
+#bar label{font-size:11px;color:var(--ink-2);display:block}
+#bar select,#bar input{
+  display:block;margin-top:2px;padding:5px 7px;font:inherit;font-size:13px;
+  border:1px solid var(--line);border-radius:5px;background:#fff;color:var(--ink)
+}
+#bar input[type=text]{width:150px}
+#bar textarea{display:block;margin-top:2px;padding:5px 7px;font:inherit;
+  font-size:13px;line-height:1.45;border:1px solid var(--line);
+  border-radius:5px;background:#fff;color:var(--ink);min-width:220px}
+#bar button{
+  padding:6px 13px;font:inherit;font-size:13px;border:1px solid var(--line);
+  border-radius:5px;background:#fff;cursor:pointer
+}
+#bar button.go{background:#2f6b52;border-color:#2f6b52;color:#fff}
+#bar button:hover{border-color:#2f6b52}
+#msg{font-size:12px;color:var(--ink-3);align-self:center}
+
+/* ── 紙 ── */
+#paper{
+  max-width:820px;margin:16px auto 60px;background:var(--paper);padding:34px 40px 40px;
+  box-shadow:0 1px 3px rgba(0,0,0,.10),0 8px 30px rgba(0,0,0,.07)
+}
+h1{font-size:19px;margin:0 0 2px;text-align:center;letter-spacing:.02em}
+.sub{text-align:center;font-size:13px;color:var(--ink-2);margin:0 0 4px}
+.date{text-align:right;font-size:12px;color:var(--ink-2);margin:0 0 14px}
+.hr{border-top:2px solid var(--ink);margin:0 0 4px}
+
+section{margin:0 0 4px}
+h2{
+  font-size:14px;margin:12px 0 3px;padding:2px 0 2px;
+  border-bottom:1px solid var(--line);font-weight:700;letter-spacing:.03em
+}
+table{width:100%;border-collapse:collapse;font-size:13px}
+td{padding:2px 4px;vertical-align:top;border-bottom:1px solid var(--line-2)}
+tr:last-child td{border-bottom:0}
+td.k{width:31%}
+td.f{width:33%;font-size:11.5px;color:var(--ink-2);
+     font-family:ui-monospace,Menlo,Consolas,monospace;word-break:break-all}
+td.m2,td.pg{width:13%;text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+td.x{width:10%;text-align:right;font-size:12px;color:var(--ink-2);white-space:nowrap}
+tr.tot td{border-top:1px solid var(--ink);border-bottom:0;font-weight:700}
+tr.tot td.f{font-weight:400}
+.unit{font-size:10px;color:var(--ink-3);margin-left:2px}
+
+.src{font-size:10.5px;color:var(--ink-3);line-height:1.4}
+.src a{color:var(--ink-3)}
+.warn{color:var(--accent)}
+tr.warn td.k{box-shadow:inset 3px 0 0 var(--accent)}
+
+.note{font-size:11.5px;color:var(--ink-2);line-height:1.55;margin:5px 0 0}
+.box{
+  margin:8px 0 0;padding:7px 10px;border:1px solid var(--line);border-radius:5px;
+  font-size:11.5px;line-height:1.55;background:#fbfaf8
+}
+.box.bad{border-color:var(--accent);background:#fdf4ee}
+.box ul{margin:4px 0 0;padding-left:17px}
+.box li{margin:1px 0}
+
+.chk{width:100%;border-collapse:collapse;font-size:12px;margin-top:4px}
+.chk th{
+  text-align:left;font-size:10.5px;color:var(--ink-3);font-weight:700;
+  padding:3px 4px;border-bottom:1px solid var(--line);white-space:nowrap
+}
+.chk td{padding:3px 4px;border-bottom:1px solid var(--line-2)}
+.chk td.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.pass{color:var(--ok);font-weight:700}
+.fail{color:var(--accent);font-weight:700}
+
+.foot{margin-top:20px;padding-top:9px;border-top:1px solid var(--line);
+      font-size:10.5px;color:var(--ink-3);line-height:1.6}
+
+.empty{text-align:center;color:var(--ink-3);padding:50px 0;font-size:14px}
+
+@media print{
+  @page{size:A4 portrait;margin:13mm 12mm}
+  body{background:#fff}
+  #bar{display:none}
+  .noprint-ctl{display:none !important}
+  #paper{max-width:none;margin:0;padding:0;box-shadow:none}
+  section{break-inside:avoid}
+  h2{break-after:avoid}
+}
+@media (max-width:640px){
+  #paper{padding:20px 16px;margin:8px}
+  td.f{display:none}
+  td.k{width:44%}
+}
+</style>
+</head>
+<body>
+
+<div id="bar">
+  <div><label>縣市</label><select id="county"><option value="">載入中…</option></select></div>
+  <div><label>鄉鎮市區</label><select id="town" disabled><option value="">—</option></select></div>
+  <div><label>段小段</label><select id="sect" disabled><option value="">—</option></select></div>
+  <div style="flex:1 1 260px"><label>地號（可多筆；跨段用「段名 地號」）</label><textarea id="nos" rows="2" style="width:100%;resize:vertical" placeholder="783-2, 787, 788-1&#10;舊社段 10"></textarea></div>
+  <button class="go" id="go">產生評估表</button>
+  <button id="print">列印 / PDF</button>
+  <button id="csv">CSV</button>
+  <span id="msg"></span>
+</div>
+
+<div id="paper"><p class="empty">選擇縣市、段，輸入地號後按「產生評估表」。</p></div>
+
+<script>
+(function () {
+'use strict';
+var $ = function (s) { return document.querySelector(s); };
+var PING = 400 / 121;
+var site = null, result = null, params = null;
+var bonuses = [];   // 送進試算的獎勵容積列（由下方勾選自動產生，也可手動加）
+var progs = null;   // /api/bonuses 回傳的適用法規
+var pick = { danger: false, tdr: false, renew: false, groups: {}, manual: [] };
+var roadW = '', applyDate = '', frontage = '';
+var sentRows = [];  // 這次送進試算的獎勵列（自動＋手動），render 依它逐列印出
+var calcSeq = 0;    // 連續勾選會發出多個請求，只認最後一次的回應
+
+function fmt(v, n) {
+  if (v == null || v === '') return '';
+  n = n == null ? 2 : n;
+  return Number(v).toLocaleString('zh-TW',
+    { minimumFractionDigits: n, maximumFractionDigits: n });
+}
+function el(t, c, x) {
+  var n = document.createElement(t);
+  if (c) n.className = c;
+  if (x != null) n.textContent = x;
+  return n;
+}
+function rocDate() {
+  var d = new Date();
+  return (d.getFullYear() - 1911) + '.' + ('0' + (d.getMonth() + 1)).slice(-2)
+    + '.' + ('0' + d.getDate()).slice(-2);
+}
+
+/* 國土測繪中心的段籍 API 不送 CORS 標頭，一律走本機後端的 /proxy。 */
+function px(u) { return '/proxy?u=' + encodeURIComponent(u); }
+function xml(u) {
+  return fetch(px(u)).then(function (r) {
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return r.text();
+  }).then(function (t) {
+    var d = new DOMParser().parseFromString(t, 'application/xml');
+    if (d.getElementsByTagName('parsererror').length) throw new Error('XML 解析失敗');
+    return d;
+  });
+}
+function txt(n, tag) {
+  var e = n.getElementsByTagName(tag)[0];
+  return e ? e.textContent.trim() : '';
+}
+function fill(sel, rows, ph) {
+  sel.textContent = '';
+  sel.appendChild(new Option(ph, ''));
+  rows.forEach(function (r) { sel.appendChild(new Option(r[0], r[1])); });
+  sel.disabled = false;
+}
+
+xml('https://api.nlsc.gov.tw/other/ListCounty').then(function (d) {
+  fill($('#county'), [].map.call(d.getElementsByTagName('countyItem'), function (it) {
+    return [txt(it, 'countyname'), txt(it, 'countycode')];
+  }), '請選擇');
+}).catch(function (e) { $('#county').innerHTML = '<option>載入失敗：' + e.message + '</option>'; });
+
+$('#county').addEventListener('change', function () {
+  $('#sect').disabled = true; $('#sect').textContent = '';
+  if (!this.value) { $('#town').disabled = true; return; }
+  xml('https://api.nlsc.gov.tw/other/ListTown/' + encodeURIComponent(this.value))
+    .then(function (d) {
+      fill($('#town'), [].map.call(d.getElementsByTagName('townItem'), function (it) {
+        return [txt(it, 'townname'), txt(it, 'towncode')];
+      }), '請選擇');
+    });
+});
+$('#town').addEventListener('change', function () {
+  if (!this.value) { $('#sect').disabled = true; return; }
+  xml('https://api.nlsc.gov.tw/other/ListLandSection/'
+    + encodeURIComponent($('#county').value) + '/' + encodeURIComponent(this.value))
+    .then(function (d) {
+      fill($('#sect'), [].map.call(d.getElementsByTagName('sectItem'), function (it) {
+        return [txt(it, 'sectstr'), txt(it, 'sectstr')];
+      }), '請選擇');
+    });
+});
+
+$('#go').addEventListener('click', run);
+$('#print').addEventListener('click', function () { window.print(); });
+$('#csv').addEventListener('click', csv);
+$('#nos').addEventListener('keydown', function (e) {
+  // 這裡是多行輸入，Enter 要留給換行（跨段時一行一個段）
+  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) run();
+});
+
+/* 把輸入框拆成一筆一筆的「段＋地號」。
+ *
+ * 一行可以是「783-2」（用上面選的段），也可以是「舊社段 10」（跨段）。
+ * 合併評估很常橫跨兩個段 —— 尤其是沿著段界的臨街基地。 */
+function parseParcels(defaultSect) {
+  var out = [];
+  ($('#nos').value || '').split(/[\n\r]+/).forEach(function (line) {
+    line = line.trim();
+    if (!line) return;
+    // 行首若是中文段名（結尾為「段」或「小段」），後面才是地號
+    var m = line.match(/^([\u4e00-\u9fa5]+段(?:[\u4e00-\u9fa5]*小段)?)\s+(.+)$/);
+    var sect = defaultSect, rest = line;
+    if (m) { sect = m[1]; rest = m[2]; }
+    rest.split(/[,，\s;；、]+/).forEach(function (n) {
+      n = n.trim();
+      if (n) out.push({ sect: sect, no: n });
+    });
+  });
+  return out;
+}
+
+function run() {
+  var cty = $('#county').selectedOptions[0];
+  cty = cty ? cty.text : '';
+  var sect = $('#sect').value;
+  var list = parseParcels(sect);
+  if (!cty || !list.length) {
+    $('#msg').textContent = '請選縣市，並輸入地號（跨段請寫「段名 地號」）';
+    return;
+  }
+  if (!sect && list.some(function (p) { return !p.sect; })) {
+    $('#msg').textContent = '請選段，或在每一行前面寫段名';
+    return;
+  }
+  $('#msg').textContent = '查詢中…（' + list.length + ' 筆）';
+  var qs = list.map(function (p) {
+    return 'p=' + encodeURIComponent(p.sect + ':' + p.no);
+  }).join('&');
+  fetch('/api/site?county=' + encodeURIComponent(cty) + '&' + qs)
+    .then(function (r) { return r.json(); })
+    .then(function (d) {
+      if (d.status !== 'ok') { $('#msg').textContent = d.message || '查不到'; return; }
+      /* 換一塊地就把獎勵勾選全部歸零。
+       * 沿用上一塊地的勾選是最隱蔽的跨區套用：畫面看起來一切正常，
+       * 只是那些獎勵屬於別的縣市。 */
+      site = d;
+      progs = d.bonusPrograms || null;
+      // 逐筆的納入與面積覆寫，換一塊地要重來
+      (d.parcels || []).forEach(function (p) {
+        p.include = (p.status === 'ok');
+        p.areaOverride = '';
+        p.userNote = '';
+      });
+      pick = { danger: false, tdr: false, renew: false, walkway: false,
+               groups: {}, manual: [] };
+      bonuses = [];
+      D.transfer = 0;
+      roadW = ''; applyDate = ''; frontage = '';
+      $('#msg').textContent = '';
+      calc();
+    }).catch(function (e) { $('#msg').textContent = '查詢失敗：' + e.message; });
+}
+
+/* 預設值全部是「設計條件」，不是法規值 —— 表上會標明。
+   使用者要改，直接在表上的輸入格改。 */
+var D = {
+  mep: 0.15, lobby: 0.075, balcony: 0.075,
+  phFloors: 3, dig: 0.80, bFloors: 2,
+  // 地下室不一定是全開挖，各層也不一定一樣大
+  bMode: 'rate', bAreaPerFloor: 0, bAreas: '',
+  transfer: 0, common: 0.32,
+  // 戶數由設計決定：地上層數 × 每層戶數（一樓常另計）。
+  // 原本用「銷售坪 ÷ 每戶坪數」倒推，每戶坪數填錯就會得到離譜的戶數。
+  // 使用者要的是「自設戶數，車位跟著戶數跑」，所以預設就是自設。
+  unitsMode: 'direct', unitsDirect: 20,
+  aboveFloors: 15, unitsPerFloor: 8, groundUnits: 0, perUnit: 35,
+  pkExempt: 500, pkStep: 150, pkExtra: 0,
+  /* 建技則第59條第1項：「依都市計畫法令或都市計畫書之規定，
+     其未規定者，依下表規定」—— 土管有訂就從土管，附表是備位。
+     住宅案幾乎都是土管一戶一車位，所以預設走這條。 */
+  pkMode: 'perUnit', carsPerUnit: 1, guestPct: 0.05, motoPerUnit: 1,
+  pkLawNote: '',
+  // 這兩個是「哪一家事務所的寫法」，不是法規值。
+  // 預設用上立那套（13 份參考表裡有 10 份是）。
+  lobbyMode: 'self',
+  saleBase: 'allowed'
+};
+
+/* 把「適用法規」頁的勾選，換算成送進試算引擎的獎勵列。
+ *
+ * 危老有兩層上限，條文分得很清楚，不能混在一起加：
+ *   第6條第1項  一般獎勵（第3～10條）合計 ≤ 基準容積 30%
+ *   第6條第4項  時程＋規模合計 ≤ 10%，且「不受」上一項限制
+ * 所以理論最大是 40%，而不是把所有項目直接相加。 */
+function buildBonusRows() {
+  var rows = [];
+  if (!progs) return bonuses.slice();
+
+  var dp = (progs.programs || []).filter(function (x) { return x.key === 'danger'; })[0];
+  if (pick.danger && dp) {
+    var general = 0, chosen = [];
+    (dp.items || []).forEach(function (it) {
+      if (pick.groups[it.group] === it.key && !it.disabled) {
+        general += it.pct; chosen.push(it);
+      }
+    });
+    var cappedGeneral = Math.min(general, dp.caps.general);
+    chosen.forEach(function (it) {
+      // 超過上限時按比例縮，並在名稱上標明，不要默默砍掉某一項
+      var pct = general > dp.caps.general ? it.pct * (dp.caps.general / general) : it.pct;
+      rows.push({
+        label: it.label + (general > dp.caps.general ? '（受上限比例調整）' : ''),
+        pct: pct, mep: true,
+        law: it.source.name + ' ' + it.source.article,
+        source: it.source
+      });
+    });
+    var extra = 0;
+    (dp.auto || []).forEach(function (a) { extra += a.pct; });
+    extra = Math.min(extra, dp.caps.extra);
+    (dp.auto || []).forEach(function (a) {
+      if (!a.pct) return;
+      rows.push({
+        label: a.label, pct: a.pct, mep: true,
+        law: a.source.name + ' ' + a.source.article, source: a.source
+      });
+    });
+    pick._dangerGeneral = general;
+    pick._dangerCapped = cappedGeneral;
+    pick._dangerExtra = extra;
+  }
+
+  // 沿街步道退縮獎勵：金額由 △FA = S × I 算出，不是乘基準容積的百分比，
+  // 所以用 absolute 模式送出，並把算式一起帶過去印在表上。
+  var wp = (progs.programs || []).filter(function (x) { return x.key === 'walkway'; })[0];
+  if (pick.walkway && wp && wp.deltaFA) {
+    rows.push({
+      label: '沿街步道空間退縮獎勵',
+      abs: wp.deltaFA,
+      formula: wp.calc,
+      mep: false,   // 非都市計畫法系的退縮獎勵，依事務所慣例不計入機電基數
+      law: wp.source.name + ' ' + wp.source.article,
+      source: wp.source
+    });
+  }
+  return rows.concat(bonuses);
+}
+
+function calc() {
+  if (!site) return;
+  sentRows = buildBonusRows().filter(function (b) { return b.pct || b.abs; });
+  var z = (site.zones && site.zones[0]) || {};
+  var cov = (z.coverage && z.coverage.value) != null ? z.coverage.value : D.cov;
+  var far = (z.far && z.far.value) != null ? z.far.value : D.far;
+  D.cov = cov; D.far = far;
+
+  params = {
+    site: {
+      areaM2: site.totalAreaM2,
+      parcels: site.parcels.filter(function (p) { return p.status === 'ok'; })
+        .map(function (p) {
+          var z = p.zone || {};
+          return {
+            sect: p.sect, no: p.no, areaM2: p.areaM2, areaFrom: p.areaFrom,
+            include: p.include !== false,
+            areaOverride: p.areaOverride,
+            note: p.userNote || null,
+            // 每筆各自的分區 —— 跨分區時引擎會據此分區分算
+            zoneName: z.name || null,
+            zoneFar: (z.far && z.far.value != null)
+              ? { value: z.far.value, source: z.far.source } : null,
+            zoneCoverage: (z.coverage && z.coverage.value != null)
+              ? { value: z.coverage.value, source: z.coverage.source } : null,
+            source: p.areaFrom === 'registered'
+              ? { kind: '地政', name: site.county + ' 地籍圖公開服務', note: '登記面積' } : null
+          };
+        })
+    },
+    zone: {
+      name: z.name, plan: z.plan,
+      source: z.source || null,
+      coverage: z.coverage && z.coverage.source
+        ? { value: cov, source: z.coverage.source } : cov,
+      far: z.far && z.far.source ? { value: far, source: z.far.source } : far
+    },
+    bonuses: sentRows.map(function (b, i) {
+      return {
+        key: 'bonus' + i,
+        label: b.label || ('獎勵容積 ' + (i + 1)),
+        base: b.abs ? 'absolute' : 'base',
+        m2: b.abs || 0,
+        formula: b.formula || null,
+        pct: b.pct || 0,
+        // 建築技術規則的綜合設計獎勵與非都市計畫法系的退縮獎勵，
+        // 依事務所慣例不計入機電設備的計算基數（見 far.py 的 mep_base）
+        countsToMep: b.mep !== false,
+        source: b.source || (b.law ? { kind: '法規', name: b.law } : null)
+      };
+    }),
+    transfer: {
+      pct: D.transfer,
+      source: pick._tdrSource || null,
+      note: pick._tdrNote || null
+    },
+    floors: {
+      mepPct: D.mep, lobbyPct: D.lobby, balconyPct: D.balcony,
+      lobbyMode: D.lobbyMode,
+      penthouse: { coveragePct: cov, floors: D.phFloors },
+      basement: {
+        mode: D.bMode,
+        digRate: D.dig,
+        floors: D.bFloors,
+        areaPerFloor: D.bAreaPerFloor,
+        floorAreas: (D.bAreas || '').split(/[,，\s]+/)
+          .map(function (x) { return parseFloat(x); })
+          .filter(function (x) { return isFinite(x) && x > 0; })
+      }
+    },
+    parking: {
+      mode: D.pkMode,
+      carsPerUnit: D.carsPerUnit,
+      guestPct: D.guestPct,
+      motoPerUnit: D.motoPerUnit,
+      lawNote: D.pkLawNote,
+      basis: 'e+f+g',
+      exemptM2: D.pkExempt,
+      stepM2: {
+        value: D.pkStep,
+        source: {
+          kind: '法規', name: '建築技術規則建築設計施工編',
+          article: '第59條附表（第二類・都市計畫內）',
+          url: 'https://law.moj.gov.tw/LawClass/LawSingle.aspx?pcode=D0070115&flno=59'
+        }
+      },
+      startCars: 0, multiplier: 1, extraCars: D.pkExtra
+    },
+    sales: {
+      model: 'ratio', base: D.saleBase, commonRatio: D.common,
+      unitsMode: D.unitsMode,
+      aboveFloors: D.aboveFloors, unitsPerFloor: D.unitsPerFloor,
+      groundUnits: D.groundUnits,
+      units: D.unitsDirect, pingPerUnit: D.perUnit
+    }
+  };
+
+  /* 勾一項就送一次試算，連點五項就有五個請求在飛。
+   * 沒有排序的話，先發的後到就會把畫面蓋回舊答案 —— 而且看起來很像
+   * 「這一項沒有生效」，很難查。所以只認最後一次發出的回應。 */
+  var mine = ++calcSeq;
+  fetch('/api/far', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params)
+  }).then(function (r) { return r.json(); }).then(function (d) {
+    if (mine !== calcSeq) return;
+    result = d; render(d);
+  }).catch(function (e) {
+    if (mine !== calcSeq) return;
+    $('#msg').textContent = '試算失敗：' + e.message;
+  });
+}
+
+/* 表上可以直接改的選項。
+ * 梯廳與銷售面積的寫法各家事務所不同，同一塊地換個寫法差好幾百平方公尺，
+ * 所以放在表上而不是藏在設定裡，改完立刻看得到差異。 */
+function chooser(key, opts) {
+  var sel = document.createElement('select');
+  sel.style.cssText = 'padding:1px 3px;font:inherit;font-size:11px;'
+    + 'border:1px solid var(--line);border-radius:4px;max-width:170px';
+  opts.forEach(function (o) { sel.appendChild(new Option(o[1], o[0])); });
+  sel.value = D[key];
+  sel.addEventListener('change', function () { D[key] = this.value; calc(); });
+  return sel;
+}
+
+// 表上可以直接改的設計參數
+function editable(key, pct, opts) {
+  opts = opts || {};
+  var i = el('input');
+  i.type = 'number'; i.step = 'any';
+  i.value = pct ? (D[key] * 100) : D[key];
+  // 每個框都要說得出自己是什麼 —— 一排沒標籤的數字框，
+  // 使用者一定會填錯格，而且錯了還算得出「合理」的數字
+  if (opts.title) { i.title = opts.title; i.setAttribute('aria-label', opts.title); }
+  if (opts.placeholder) i.placeholder = opts.placeholder;
+  i.style.cssText = 'width:' + (opts.width || 56) + 'px;padding:1px 4px;'
+    + 'font:inherit;font-size:12px;border:1px solid var(--line);'
+    + 'border-radius:4px;text-align:right';
+  i.addEventListener('change', function () {
+    var v = parseFloat(this.value);
+    if (!isFinite(v)) { if (opts.allowBlank) { D[key] = ''; calc(); } return; }
+    D[key] = pct ? v / 100 : v;
+    calc();
+  });
+  return i;
+}
+
+/* 一個「標籤在前、輸入在後」的小組件。
+ * 停車那幾格原本是「[框][框] ㎡免設 ㎡/輛」——單位跟在後面，
+ * 看的人得回頭數才知道哪個框是哪個。改成標籤在前就不會了。 */
+function field(label, node, after) {
+  var w = el('span');
+  w.style.cssText = 'display:inline-flex;align-items:center;gap:3px;'
+    + 'font-size:10.5px;color:var(--ink-3);white-space:nowrap';
+  w.appendChild(document.createTextNode(label));
+  w.appendChild(node);
+  if (after) w.appendChild(el('span', 'unit', after));
+  return w;
+}
+
+function sect(title) {
+  var s = el('section');
+  s.appendChild(el('h2', null, title));
+  return s;
+}
+function tbl() { var t = el('table'); t.appendChild(el('tbody')); return t; }
+
+function line(t, k, f, m2, pg, x, opt) {
+  opt = opt || {};
+  var tr = el('tr', opt.cls || '');
+  var tdk = el('td', 'k');
+  tdk.appendChild(document.createTextNode(k));
+  if (opt.edit) {
+    tdk.appendChild(document.createTextNode(' '));
+    tdk.appendChild(opt.edit);
+    if (opt.editUnit) tdk.appendChild(el('span', 'unit', opt.editUnit));
+  }
+  if (opt.after) {
+    var av = el('div', 'noprint-ctl');
+    av.style.marginTop = '2px';
+    av.appendChild(opt.after);
+    tdk.appendChild(av);
+  }
+  if (opt.src) {
+    var s = el('div', 'src', opt.src.txt);
+    if (opt.src.url) {
+      var a = el('a', null, opt.src.linkText || '（來源）');
+      a.href = opt.src.url; a.target = '_blank'; a.rel = 'noopener';
+      s.appendChild(a);
+    }
+    tdk.appendChild(s);
+  } else if (opt.warnSrc) {
+    tdk.appendChild(el('div', 'src warn', '⚠ ' + opt.warnSrc));
+  }
+  tr.appendChild(tdk);
+  tr.appendChild(el('td', 'f', f || ''));
+  tr.appendChild(el('td', 'm2', m2 == null ? '' : fmt(m2)));
+  tr.appendChild(el('td', 'pg', pg == null ? '' : fmt(pg)));
+  tr.appendChild(el('td', 'x', x || ''));
+  t.querySelector('tbody').appendChild(tr);
+  return tr;
+}
+
+/* 來源標示刻意寫短。
+ *
+ * 一開始每一列都印完整的「依據：［圖資］各直轄市／縣市政府都市發展局
+ * 開放資料・苗栗縣都市計畫使用分區圖屬性」，使用分區、容積率、建蔽率
+ * 三列連著重複三次，整頁被註解淹掉，反而看不到數字。
+ * 改成列上只留「圖資」「法規＋條次」這種短標籤，完整出處集中在
+ * 拾、資料來源那一段。 */
+function srcOf(r) {
+  if (!r || !r.source) return null;
+  var s = r.source;
+  var t = s.kind === '法規'
+    ? ((s.name || '') + ' ' + (s.article || ''))
+    : (s.kind || '來源') + '：' + (s.note || s.name || '');
+  return { txt: t, url: s.url, linkText: s.kind === '法規' ? '（條文）' : '（來源）' };
+}
+
+function render(d) {
+  var p = $('#paper');
+  p.textContent = '';
+  var z = (site.zones && site.zones[0]) || {};
+  var first = site.parcels[0] || {};
+
+  // 標題
+  p.appendChild(el('h1', null, (site.county || '') + (first.sect || '')
+    + (first.no || '') + '地號案'));
+  p.appendChild(el('p', 'sub', '開發面積預估表'));
+  p.appendChild(el('p', 'date', '製表日期　' + rocDate()));
+  p.appendChild(el('div', 'hr'));
+
+  function get(sk, rk) {
+    var s = (d.sections || []).filter(function (x) { return x.key === sk; })[0];
+    if (!s) return null;
+    return s.rows.filter(function (r) { return r.key === rk; })[0] || null;
+  }
+
+  // 壹、土地地號
+  var s1 = sect('壹、土地地號');
+  var t1 = tbl();
+  var okp = site.parcels.filter(function (x) { return x.status === 'ok'; });
+  var inc = okp.filter(function (x) { return x.include !== false; });
+  var sects = [];
+  inc.forEach(function (x) {
+    if (sects.indexOf(x.sect) < 0) sects.push(x.sect);
+  });
+  line(t1, '地號', (site.county || '') + sects.join('、') + ' '
+    + inc.map(function (x) { return x.no; }).join('、')
+    + ' 等 ' + inc.length + ' 筆'
+    + (okp.length > inc.length
+        ? '（另 ' + (okp.length - inc.length) + ' 筆不納入）' : ''),
+    null, null, '');
+
+  /* 逐筆一列，可以勾掉不納入、也可以改面積。
+   * 事務所的表常寫「不包括市有地660-1」「218部分」——
+   * 那些判斷會直接改變基地面積，必須做在表上而不是叫人自己減。 */
+  okp.forEach(function (x) {
+    var tr = el('tr');
+    var td = el('td', 'k');
+
+    var cb = el('input', 'noprint-ctl');
+    cb.type = 'checkbox';
+    cb.checked = x.include !== false;
+    cb.style.cssText = 'width:auto;margin:0 5px 0 0;vertical-align:middle';
+    cb.addEventListener('change', function () { x.include = this.checked; calc(); });
+    td.appendChild(cb);
+    td.appendChild(document.createTextNode('　' + x.sect + ' ' + x.no));
+    if (x.include === false) {
+      td.appendChild(el('div', 'src warn', '不納入'));
+    }
+    tr.appendChild(td);
+
+    var tdf = el('td', 'f');
+    if (x.include !== false) {
+      var ov = el('input', 'noprint-ctl');
+      ov.type = 'number'; ov.step = 'any'; ov.placeholder = '改面積';
+      ov.value = x.areaOverride || '';
+      ov.style.cssText = 'width:74px;padding:1px 4px;font:inherit;font-size:11px;'
+        + 'border:1px solid var(--line);border-radius:4px;text-align:right';
+      ov.addEventListener('change', function () {
+        x.areaOverride = this.value; calc();
+      });
+      tdf.appendChild(ov);
+      tdf.appendChild(el('span', 'unit', '㎡（部分納入時填）'));
+    }
+    var nt = el('input', 'noprint-ctl');
+    nt.type = 'text'; nt.placeholder = '備註，例：市有地未取得';
+    nt.value = x.userNote || '';
+    nt.style.cssText = 'width:96%;margin-top:2px;padding:1px 4px;font:inherit;'
+      + 'font-size:11px;border:1px solid var(--line);border-radius:4px';
+    nt.addEventListener('change', function () { x.userNote = this.value; calc(); });
+    tdf.appendChild(nt);
+    if (x.zone && x.zone.name) {
+      tdf.appendChild(el('div', 'src', x.zone.name));
+    }
+    tr.appendChild(tdf);
+
+    var used = (x.areaOverride !== '' && x.areaOverride != null)
+      ? parseFloat(x.areaOverride) : x.areaM2;
+    tr.appendChild(el('td', 'm2',
+      x.include === false ? '—' : (used == null ? '' : fmt(used))));
+    tr.appendChild(el('td', 'pg',
+      x.include === false ? '' : (used == null ? '' : fmt(used / PING))));
+    tr.appendChild(el('td', 'x',
+      x.include === false ? '' :
+      ((x.areaOverride !== '' && x.areaOverride != null) ? '人工'
+        : ({ registered: '登記', service: '服務', geometry: '圖形' }[x.areaFrom] || ''))));
+    t1.querySelector('tbody').appendChild(tr);
+  });
+  s1.appendChild(t1);
+  if (site.found !== site.requested) {
+    s1.appendChild(el('p', 'box bad',
+      '⚠ 輸入 ' + site.requested + ' 筆、查到 ' + site.found
+      + ' 筆。下列面積不含查不到的地號（可能已合併、分割或改編），'
+      + '請以土地登記謄本核對後手動調整。'));
+  }
+  p.appendChild(s1);
+
+  // 貳、基地面積
+  var s2 = sect('貳、基地面積');
+  var t2 = tbl();
+  line(t2, '基地面積合計', '', d.netAreaM2, d.netAreaPing, '', { cls: 'tot' });
+  s2.appendChild(t2);
+  p.appendChild(s2);
+
+  // 叁、使用分區
+  var s3 = sect('叁、使用分區');
+  var t3 = tbl();
+  var zr = get('zone', 'zone');
+  line(t3, '使用分區', z.name || '（查無）', null, null, '', { src: srcOf(zr) });
+  if (z.plan) line(t3, '都市計畫', z.plan, null, null, '');
+  if (z.detailPlan) line(t3, '細部計畫', z.detailPlan, null, null, '');
+  if (d.mixedZone && d.zoneGroups) {
+    d.zoneGroups.forEach(function (g) {
+      var f = (g.far && g.far.value != null) ? g.far.value
+        : (typeof g.far === 'number' ? g.far : null);
+      var c = (g.coverage && g.coverage.value != null) ? g.coverage.value
+        : (typeof g.coverage === 'number' ? g.coverage : null);
+      line(t3, '　' + g.name, '', g.areaM2, g.areaM2 / PING,
+        (f != null ? '容積 ' + fmt(f * 100) + '%' : '')
+        + (c != null ? '　建蔽 ' + fmt(c * 100) + '%' : ''));
+    });
+  }
+  var fr = get('zone', 'far'), cr = get('zone', 'coverage');
+  line(t3, '法定容積率', '', null, null, fmt(fr && fr.pct) + '%',
+    { edit: editable('far', true), editUnit: '%',
+      src: srcOf(fr), warnSrc: fr && fr.assumed ? '無圖資來源，請依土地使用分區管制要點填入' : null });
+  line(t3, '法定建蔽率', '', null, null, fmt(cr && cr.pct) + '%',
+    { edit: editable('cov', true), editUnit: '%',
+      src: srcOf(cr), warnSrc: cr && cr.assumed ? '無圖資來源，請依土地使用分區管制要點填入' : null });
+  var ba = get('zone', 'buildArea'), oa = get('zone', 'openArea');
+  line(t3, '最大建築面積', ba && ba.formula, ba && ba.m2, ba && ba.ping, '');
+  line(t3, '法定空地面積', oa && oa.formula, oa && oa.m2, oa && oa.ping, '');
+  s3.appendChild(t3);
+  p.appendChild(s3);
+
+  // 肆、適用法規與容積獎勵
+  //
+  // 這一段回答使用者真正要的問題：「這塊地依它的位置，能套用哪些法條、
+  // 各自最多能拿多少」。項目與上限由 bonuses.py 依縣市、分區、面積、
+  // 臨路寬度判定，畫面只負責呈現與勾選。
+  p.appendChild(renderPrograms());
+
+  // 伍、允設容積
+  //
+  // 獎勵容積每一項都做成「一列到底」：左邊是可以改的名稱、百分比與法源，
+  // 右邊是引擎回算出來的面積。原本把編輯列另外堆在合計之後，結果同一項
+  // 獎勵在表上出現兩次，而且順序跑到總計下面 —— 那樣印出來沒辦法看。
+  var s5 = sect('伍、允設容積');
+  var t5 = tbl();
+  var capSec = (d.sections || []).filter(function (x) { return x.key === 'capacity'; })[0];
+  var capRows = capSec ? capSec.rows : [];
+  function capRow(k) {
+    return capRows.filter(function (r) { return r.key === k; })[0] || null;
+  }
+
+  var br = capRow('base');
+  line(t5, 'a. 法定基準容積 FA', br && br.formula, br && br.m2, br && br.ping,
+    br ? fmt(br.pct) + '%' : '',
+    { src: srcOf(br), warnSrc: br && br.assumed ? '容積率未經法規查證' : null });
+
+  /* 逐列印出這次真的送進試算的每一項獎勵。
+   *
+   * 原本這裡只跑手動加的 bonuses[]，結果從「肆」勾選來的危老獎勵
+   * 有進到合計、卻沒有出現在表上 —— 數字對得起來但看不出是怎麼來的，
+   * 那正是這份表最不能發生的事。 */
+  var letters = 'bcdefghijkl';
+  sentRows.forEach(function (b, i) {
+    var er = capRow('bonus' + i);
+    var manual = bonuses.indexOf(b) >= 0;   // 自動來的（危老、沿街步道）唯讀
+    var tr = el('tr');
+    var td = el('td', 'k');
+    td.appendChild(document.createTextNode((letters[i] || '　') + '. '));
+
+    if (manual) {
+      var nm = el('input');
+      nm.type = 'text'; nm.value = b.label; nm.placeholder = '獎勵名稱';
+      nm.style.cssText = 'width:68%;padding:1px 4px;font:inherit;font-size:12px;'
+        + 'border:1px solid var(--line);border-radius:4px';
+      nm.addEventListener('change', function () { b.label = this.value; calc(); });
+      td.appendChild(nm);
+      var lw = el('input');
+      lw.type = 'text'; lw.value = b.law || '';
+      lw.placeholder = '法源（法規名稱＋條次）';
+      lw.style.cssText = 'width:96%;margin-top:2px;padding:1px 4px;font:inherit;'
+        + 'font-size:11px;border:1px solid var(--line);border-radius:4px';
+      lw.addEventListener('change', function () { b.law = this.value; calc(); });
+      td.appendChild(lw);
+      if (!b.law) td.appendChild(el('div', 'src warn', '⚠ 未填法源'));
+    } else {
+      td.appendChild(document.createTextNode(b.label));
+      if (b.source) {
+        var sd = el('div', 'src', b.source.name + ' ' + b.source.article);
+        if (b.source.url) {
+          var la = el('a', null, '（條文）');
+          la.href = b.source.url; la.target = '_blank'; la.rel = 'noopener';
+          sd.appendChild(la);
+        }
+        td.appendChild(sd);
+      }
+    }
+    tr.appendChild(td);
+
+    var tdf = el('td', 'f');
+    if (manual) {
+      var pc = el('input');
+      pc.type = 'number'; pc.step = 'any'; pc.value = b.pct * 100;
+      pc.style.cssText = 'width:58px;padding:1px 4px;font:inherit;font-size:12px;'
+        + 'border:1px solid var(--line);border-radius:4px;text-align:right';
+      pc.addEventListener('change', function () {
+        b.pct = (parseFloat(this.value) || 0) / 100; calc();
+      });
+      tdf.appendChild(pc);
+      tdf.appendChild(el('span', 'unit', '% × 基準容積'));
+      var mp = el('label', 'noprint-ctl');
+      mp.style.cssText = 'display:block;font-size:10.5px;color:var(--ink-3);margin-top:2px';
+      var cbm = el('input'); cbm.type = 'checkbox'; cbm.checked = b.mep !== false;
+      cbm.style.cssText = 'width:auto;vertical-align:middle;margin:0 3px 0 0';
+      cbm.addEventListener('change', function () { b.mep = this.checked; calc(); });
+      mp.appendChild(cbm);
+      mp.appendChild(document.createTextNode('計入機電設備計算基數'));
+      tdf.appendChild(mp);
+    } else {
+      tdf.textContent = er ? er.formula : '';
+    }
+    tr.appendChild(tdf);
+
+    tr.appendChild(el('td', 'm2', er && er.m2 != null ? fmt(er.m2) : ''));
+    tr.appendChild(el('td', 'pg', er && er.ping != null ? fmt(er.ping) : ''));
+    var tdx = el('td', 'x');
+    tdx.appendChild(document.createTextNode(er && er.pct != null ? fmt(er.pct) + '%' : ''));
+    if (manual) {
+      var del = el('button', 'noprint-ctl', '刪除');
+      del.style.cssText = 'margin-left:5px;padding:1px 6px;font:inherit;font-size:11px;'
+        + 'cursor:pointer;border:1px solid var(--line);border-radius:4px;background:#fff';
+      del.addEventListener('click', function () {
+        bonuses.splice(bonuses.indexOf(b), 1); calc();
+      });
+      tdx.appendChild(del);
+    }
+    tr.appendChild(tdx);
+    t5.querySelector('tbody').appendChild(tr);
+  });
+
+  var tr0 = capRow('transfer');
+  line(t5, (letters[sentRows.length] || '　') + '. 容積移轉',
+    tr0 ? tr0.formula : '基準容積 × 0%', tr0 && tr0.m2, tr0 && tr0.ping,
+    tr0 && tr0.pct != null ? fmt(tr0.pct) + '%' : '0.00%',
+    { edit: editable('transfer', true), editUnit: '%',
+      src: srcOf(tr0),
+      warnSrc: (tr0 && tr0.source) ? null
+        : '上限依都市計畫容積移轉實施辦法及該案地方審查基準，請於「肆」填入臨接道路寬度' });
+
+  var addTr = el('tr', 'noprint-ctl');
+  var addTd = el('td');
+  addTd.colSpan = 5;
+  var addBtn = el('button', null, '＋ 新增獎勵容積（危老／都更／開放空間／退縮…）');
+  addBtn.style.cssText = 'padding:3px 10px;font:inherit;font-size:12px;cursor:pointer;'
+    + 'border:1px dashed var(--line);border-radius:5px;background:#fff;color:var(--ink-2)';
+  addBtn.addEventListener('click', function () {
+    bonuses.push({ label: '', pct: 0, mep: true, law: '' }); calc();
+  });
+  addTd.appendChild(addBtn);
+  addTr.appendChild(addTd);
+  t5.querySelector('tbody').appendChild(addTr);
+
+  var ar = capRow('allowed');
+  line(t5, '合計允設容積', ar && ar.formula, ar && ar.m2, ar && ar.ping,
+    ar ? fmt(ar.pct) + '%' : '', { cls: 'tot' });
+
+  s5.appendChild(t5);
+  p.appendChild(s5);
+
+  // 陸、設計樓地板面積
+  var s6 = sect('陸、設計樓地板面積');
+  var t6 = tbl();
+  var flSec = (d.sections || []).filter(function (x) { return x.key === 'floors'; })[0];
+  var EDIT = { f: ['mep', true], g: ['lobby', true], h: ['balcony', true] };
+  (flSec ? flSec.rows : []).forEach(function (r) {
+    var o = { cls: r.key === 'm' ? 'tot' : '' };
+    if (EDIT[r.key]) { o.edit = editable(EDIT[r.key][0], true); o.editUnit = '%'; }
+    if (r.key === 'g') {
+      o.after = chooser('lobbyMode', [
+        ['self', '自我參照 (e+f)×r÷(1−r)'],
+        ['simple', '直接乘 (e+f)×r']
+      ]);
+    }
+    if (r.key === 'i') { o.edit = editable('phFloors', false); o.editUnit = '層'; }
+    if (r.key === 'l') {
+      var bb = el('div');
+      bb.style.cssText = 'display:flex;flex-wrap:wrap;gap:5px;align-items:center';
+      bb.appendChild(chooser('bMode', [
+        ['rate', '基地 × 開挖率 × 層數'],
+        ['area', '單層面積 × 層數'],
+        ['areas', '逐層給面積']
+      ]));
+      if (D.bMode === 'rate') {
+        bb.appendChild(field('開挖率',
+          editable('dig', true, { title: '地下室開挖率' }), '%'));
+        bb.appendChild(field('層數',
+          editable('bFloors', false, { title: '地下層數' }), '層'));
+      } else if (D.bMode === 'area') {
+        bb.appendChild(field('單層面積',
+          editable('bAreaPerFloor', false,
+                   { title: '地下室單層面積', width: 74 }), '㎡'));
+        bb.appendChild(field('層數',
+          editable('bFloors', false, { title: '地下層數' }), '層'));
+      } else {
+        var ta = el('input');
+        ta.type = 'text';
+        ta.placeholder = 'B1, B2, B3 各層面積，逗號分隔，例：520, 700, 700';
+        ta.value = D.bAreas || '';
+        ta.style.cssText = 'flex:1 1 210px;padding:1px 4px;font:inherit;'
+          + 'font-size:11px;border:1px solid var(--line);border-radius:4px';
+        ta.addEventListener('change', function () {
+          D.bAreas = this.value; calc();
+        });
+        bb.appendChild(field('各層面積', ta, '㎡'));
+      }
+      o.after = bb;
+    }
+    line(t6, r.key + '. ' + r.label, r.formula, r.m2, r.ping, r.note || '', o);
+  });
+  s6.appendChild(t6);
+  p.appendChild(s6);
+
+  // 柒、停車
+  var s7 = sect('柒、停車');
+  var t7 = tbl();
+  var pkSec = (d.sections || []).filter(function (x) { return x.key === 'parking'; })[0];
+  (pkSec ? pkSec.rows : []).forEach(function (r) {
+    var o = { src: srcOf(r) };
+    if (r.key === 'legalCar') {
+      var box = el('div');
+      box.style.cssText = 'display:flex;flex-wrap:wrap;gap:4px;align-items:center';
+      box.appendChild(chooser('pkMode', [
+        ['perUnit', '依土管 一戶一車位'],
+        ['code', '依建技則第59條附表']
+      ]));
+      if (D.pkMode === 'perUnit') {
+        /* 車位跟著戶數跑，所以戶數就放在這一列 ——
+         * 不必跳到「捌」去找，也看得出兩者的關係。
+         * 這個框跟捌的戶數是同一個值，改哪邊都一樣。 */
+        box.appendChild(field('戶數',
+          D.unitsMode === 'direct'
+            ? editable('unitsDirect', false,
+                       { title: '自設戶數', placeholder: '戶', width: 62,
+                         allowBlank: true })
+            : (function () {
+                var t = el('span');
+                t.textContent = (r.cars != null && D.carsPerUnit)
+                  ? fmt(r.cars / D.carsPerUnit, 1) : '—';
+                t.style.cssText = 'font-variant-numeric:tabular-nums;'
+                  + 'color:var(--ink);font-size:12px';
+                return t;
+              }()),
+          '戶'));
+        var um = chooser('unitsMode', [
+          ['direct', '自設戶數'],
+          ['floors', '樓層 × 每層戶數'],
+          ['ping', '銷售坪 ÷ 每戶坪數']
+        ]);
+        um.style.maxWidth = '140px';
+        box.appendChild(um);
+        box.appendChild(field('汽車',
+          editable('carsPerUnit', false, { title: '每戶汽車位數' }), '車位/戶'));
+        box.appendChild(field('來賓',
+          editable('guestPct', true, { title: '來賓車位比例' }), '%'));
+        box.appendChild(field('機車',
+          editable('motoPerUnit', false, { title: '每戶機車位數' }), '車位/戶'));
+        var ln = el('input');
+        ln.type = 'text';
+        ln.placeholder = '土管條次，例：○○細部計畫土管要點第26條第1款';
+        ln.value = D.pkLawNote || '';
+        ln.style.cssText = 'flex:1 1 100%;margin-top:2px;padding:1px 4px;'
+          + 'font:inherit;font-size:11px;border:1px solid var(--line);'
+          + 'border-radius:4px';
+        ln.addEventListener('change', function () {
+          D.pkLawNote = this.value; calc();
+        });
+        box.appendChild(ln);
+      } else {
+        box.appendChild(field('免設額度',
+          editable('pkExempt', false, { title: '免設停車之樓地板面積額度' }), '㎡'));
+        box.appendChild(field('級距',
+          editable('pkStep', false, { title: '每幾平方公尺設一輛' }), '㎡/輛'));
+      }
+      o.after = box;
+    }
+    if (r.key === 'extraCar') {
+      o.edit = editable('pkExtra', false);
+      o.editUnit = '輛';
+    }
+    line(t7, r.label, r.formula, null, null,
+      (r.cars != null ? r.cars + ' 輛' : ''), o);
+  });
+  s7.appendChild(t7);
+  s7.appendChild(el('p', 'note',
+    D.pkMode === 'perUnit'
+      ? '本表依該案土地使用分區管制要點之「住宅一戶一車位」計算。'
+        + '建築技術規則第59條第1項規定停車空間優先依都市計畫法令或都市計畫書'
+        + '之規定，其未規定者才適用該條附表 —— 請確認上方填寫的土管條次無誤。'
+      : '本表採建築技術規則第59條附表第二類（住宅、集合住宅）都市計畫內級距。'
+        + '該條第1項規定土管有訂者從土管，附表為備位規定，'
+        + '個案請先確認土管有無另訂停車標準。'));
+  p.appendChild(s7);
+
+  // 捌～拾、銷售與坪效
+  var s8 = sect('捌、預估銷售與開發係數');
+  var t8 = tbl();
+  var slSec = (d.sections || []).filter(function (x) { return x.key === 'sales'; })[0];
+  (slSec ? slSec.rows : []).forEach(function (r) {
+    var o = {};
+    if (r.key === 'sale') {
+      o.edit = editable('common', true);
+      o.editUnit = '% 公設比';
+      o.after = chooser('saleBase', [
+        ['allowed', '分子：允設容積'],
+        ['allowed+bal', '分子：允設容積＋陽台'],
+        ['allowed+mep+bal', '分子：允設容積＋機電＋陽台']
+      ]);
+    }
+    if (r.key === 'units') {
+      var box = el('div');
+      box.style.cssText = 'display:flex;flex-wrap:wrap;gap:4px;align-items:center';
+      box.appendChild(chooser('unitsMode', [
+        ['floors', '樓層 × 每層戶數'],
+        ['direct', '直接指定戶數'],
+        ['ping', '銷售坪 ÷ 每戶坪數']
+      ]));
+      if (D.unitsMode === 'floors') {
+        box.appendChild(field('地上層數',
+          editable('aboveFloors', false, { title: '地上層數' }), '層'));
+        box.appendChild(field('每層',
+          editable('unitsPerFloor', false, { title: '每層戶數' }), '戶'));
+        box.appendChild(field('一樓',
+          editable('groundUnits', false, { title: '一樓戶數，0 表示與其他層相同' }),
+          '戶（0＝同上）'));
+      } else if (D.unitsMode === 'direct') {
+        box.appendChild(field('戶數',
+          editable('unitsDirect', false,
+                   { title: '自設戶數', placeholder: '戶', width: 62,
+                     allowBlank: true }), '戶'));
+      } else {
+        box.appendChild(field('每戶',
+          editable('perUnit', false, { title: '每戶銷售坪數' }), '坪/戶'));
+      }
+      o.after = box;
+    }
+    if (r.outlier) o.cls = 'warn';
+    var x = '';
+    if (r.units != null) x = fmt(r.units, 1) + ' 戶';
+    else if (r.ratio != null) x = fmt(r.ratio) + ' 倍';
+    line(t8, r.label, r.formula, r.m2, r.ping, x,
+      Object.assign(o, { cls: r.key === 'efficiency' ? 'tot' : '' }));
+  });
+  s8.appendChild(t8);
+  p.appendChild(s8);
+
+  // 玖、法規檢核
+  if (d.checks && d.checks.length) {
+    var s9 = sect('玖、法規檢核（建築技術規則）');
+    var ct = el('table', 'chk');
+    var hd = el('tr');
+    ['檢核項目', '設計值 ㎡', '法定上限 ㎡', '上限依據', '結果'].forEach(function (h) {
+      hd.appendChild(el('th', null, h));
+    });
+    ct.appendChild(hd);
+    d.checks.forEach(function (c) {
+      var tr = el('tr');
+      var td = el('td');
+      td.appendChild(document.createTextNode(c.label));
+      var s = el('div', 'src', (c.source && c.source.article) || '');
+      if (c.source && c.source.url) {
+        var a = el('a', null, '（條文）');
+        a.href = c.source.url; a.target = '_blank'; a.rel = 'noopener';
+        s.appendChild(a);
+      }
+      td.appendChild(s);
+      tr.appendChild(td);
+      tr.appendChild(el('td', 'n', fmt(c.used)));
+      tr.appendChild(el('td', 'n', fmt(c.limit)));
+      tr.appendChild(el('td', null, c.baseLabel || ''));
+      tr.appendChild(el('td', c.ok ? 'pass' : 'fail',
+        c.ok ? '符合' : '超過 ' + fmt(c.over) + ' ㎡'));
+      ct.appendChild(tr);
+    });
+    s9.appendChild(ct);
+    var bad = d.checks.filter(function (c) { return !c.ok; });
+    if (bad.length) {
+      s9.appendChild(el('p', 'box bad',
+        '⚠ 有 ' + bad.length + ' 項超過建築技術規則的免計容積上限。'
+        + '常見原因是本表沿用事務所慣用的比例（機電 15%、梯廳 7.5%、陽台 7.5%），'
+        + '而現行條文為：機電等五項合計上限為「基準容積」的 15%（僅一座直通樓梯者 10%）、'
+        + '陽臺與梯廳各為「該層樓地板面積」的 10% 且兩者合計 15%。'
+        + '請調整設計值，或確認個案有無土管特別規定可資援引。'));
+    }
+    p.appendChild(s9);
+  }
+
+  // 拾、資料來源與免責
+  var s10 = sect('拾、資料來源');
+  var box = el('div', 'box');
+  var ul = el('ul');
+  [['地籍與面積', (site.county || '') + ' 地籍圖公開服務（' + okp.length + ' 筆，'
+      + (okp.every(function (x) { return x.areaFrom === 'registered'; })
+        ? '登記面積' : '含非登記面積') + '）'],
+   ['使用分區', (z.source && z.source.name) || '—'],
+   ['段籍清單', '內政部國土測繪中心 段籍資料 API'],
+   ['法規條文', '全國法規資料庫　建築技術規則建築設計施工編（民國115年02月23日修正）']
+  ].forEach(function (r) {
+    ul.appendChild(el('li', null, r[0] + '：' + r[1]));
+  });
+  box.appendChild(ul);
+  s10.appendChild(box);
+
+  if (d.assumed && d.assumed.length) {
+    var ab = el('div', 'box');
+    ab.appendChild(el('strong', null, '下列 ' + d.assumed.length
+      + ' 項為設計條件或市場慣例，非法規值：'));
+    var au = el('ul');
+    d.assumed.forEach(function (a) { au.appendChild(el('li', null, a.label)); });
+    ab.appendChild(au);
+    s10.appendChild(ab);
+  }
+  p.appendChild(s10);
+
+  p.appendChild(el('p', 'foot',
+    '本表為土地開發初步評估，依公開圖資與現行法規條文計算，各項比例中屬設計條件者'
+    + '已於上方標明。實際可建容積、獎勵額度、停車數量與退縮規定，'
+    + '應以該案都市計畫土地使用分區管制要點、建照預審及都市設計審議之核定為準；'
+    + '土地面積應以土地登記謄本核對。'));
+}
+
+function ctlInput(val, ph, w, on) {
+  var i = el('input');
+  i.type = 'text'; i.value = val || ''; i.placeholder = ph || '';
+  i.style.cssText = 'width:' + (w || 70) + 'px;padding:1px 4px;font:inherit;'
+    + 'font-size:12px;border:1px solid var(--line);border-radius:4px';
+  i.addEventListener('change', function () { on(this.value); });
+  return i;
+}
+
+function renderPrograms() {
+  var s4 = sect('肆、適用法規與容積獎勵');
+  if (!progs) {
+    s4.appendChild(el('p', 'note', '查詢地號後顯示。'));
+    return s4;
+  }
+
+  /* 位置沒查實就不能套地方法規 —— 使用者明確要求「不能跨區套用」。
+   * 這個警告要放最前面，因為它決定了下面整串有沒有效。 */
+  if (progs.scopeWarning) {
+    s4.appendChild(el('p', 'box bad', '⚠ ' + progs.scopeWarning));
+  }
+
+  // 圖資裡沒有、但會直接改變答案的兩個條件
+  var cond = el('div', 'box noprint-ctl');
+  cond.appendChild(el('strong', null, '個案條件（圖資查不到，需自行填寫）'));
+  var cr = el('div');
+  cr.style.cssText = 'display:flex;gap:16px;flex-wrap:wrap;margin-top:5px';
+  var w1 = el('label'); w1.style.fontSize = '11.5px';
+  w1.appendChild(document.createTextNode('臨接道路寬度 '));
+  w1.appendChild(ctlInput(roadW, '公尺', 58, function (v) { roadW = v; reloadPrograms(); }));
+  w1.appendChild(el('span', 'unit', '公尺　→ 決定容積移轉上限級距'));
+  cr.appendChild(w1);
+  var w2 = el('label'); w2.style.fontSize = '11.5px';
+  w2.appendChild(document.createTextNode('危老重建計畫申請日 '));
+  w2.appendChild(ctlInput(applyDate, 'YYYY-MM-DD', 95, function (v) { applyDate = v; reloadPrograms(); }));
+  w2.appendChild(el('span', 'unit', '　→ 決定時程獎勵級距'));
+  cr.appendChild(w2);
+  var w3 = el('label'); w3.style.fontSize = '11.5px';
+  w3.appendChild(document.createTextNode('臨接計畫道路長度 '));
+  w3.appendChild(ctlInput(frontage, '公尺', 58, function (v) { frontage = v; reloadPrograms(); }));
+  w3.appendChild(el('span', 'unit', '公尺　→ 算沿街步道退縮獎勵的 S'));
+  cr.appendChild(w3);
+  cond.appendChild(cr);
+  s4.appendChild(cond);
+
+  (progs.programs || []).forEach(function (pg) {
+    // 換一塊地之後，上一塊地的勾選不能留著 —— 那正是「跨區套用」的來源
+    if (pg.blocked && pick[pg.key]) { pick[pg.key] = false; }
+    var box = el('div', 'box');
+    var h = el('div');
+    h.style.cssText = 'display:flex;align-items:baseline;gap:7px;flex-wrap:wrap';
+
+    if (!pg.blocked && (pg.key === 'danger' || pg.key === 'tdr' || pg.key === 'renew')) {
+      var lb = el('label', 'noprint-ctl');
+      lb.style.cssText = 'font-weight:700;cursor:pointer';
+      var cb = el('input');
+      cb.type = 'checkbox';
+      cb.checked = !!pick[pg.key];
+      cb.style.cssText = 'width:auto;margin:0 4px 0 0;vertical-align:middle';
+      cb.addEventListener('change', function () {
+        pick[pg.key] = this.checked;
+        if (pg.key === 'tdr') {
+          D.transfer = this.checked && pg.pct != null ? pg.pct : 0;
+          pick._tdrSource = this.checked ? pg.source : null;
+          pick._tdrNote = this.checked ? pg.note : null;
+        }
+        calc();
+      });
+      lb.appendChild(cb);
+      lb.appendChild(document.createTextNode('本案採用'));
+      h.appendChild(lb);
+    }
+    h.appendChild(el('strong', null, pg.title));
+    if (pg.law) {
+      var a = el('a', null, pg.law + (pg.revision ? '（' + pg.revision + '）' : ''));
+      a.href = pg.url; a.target = '_blank'; a.rel = 'noopener';
+      a.style.cssText = 'font-size:10.5px;color:var(--ink-3)';
+      h.appendChild(a);
+    }
+    box.appendChild(h);
+
+    if (pg.appliesTo) {
+      box.appendChild(el('p', 'src', '適用範圍：' + pg.appliesTo));
+    }
+    if (pg.blocked) {
+      box.appendChild(el('p', 'src warn', '✕ 不套用：' + (pg.blockedReason || '')));
+    }
+    if (pg.eligible === false) {
+      box.appendChild(el('p', 'src warn', '✕ 不適用：' + (pg.reason || '')));
+    } else if (pg.eligible === true) {
+      box.appendChild(el('p', 'src', '✓ ' + (pg.reason || '')));
+    }
+    if (pg.unverified) box.appendChild(el('p', 'src warn', '⚠ ' + pg.unverified));
+
+    if (pg.key === 'tdr') {
+      if (pg.pct == null) {
+        box.appendChild(el('p', 'src warn', '⚠ ' + (pg.note || '')));
+      } else {
+        box.appendChild(el('p', 'src', pg.note + '　依據：'
+          + pg.source.name + ' ' + pg.source.article));
+      }
+      if (pg.tiers) {
+        box.appendChild(el('p', 'src', '級距：' + pg.tiers.map(function (t) {
+          return (t.max ? t.min + '–' + t.max : t.min + ' 以上')
+            + ' 公尺 → ' + Math.round(t.pct * 100) + '%';
+        }).join('　')));
+      }
+      if (pg.bonusNote) box.appendChild(el('p', 'src', pg.bonusNote));
+      (pg.notes || []).forEach(function (n) {
+        box.appendChild(el('p', 'src', '・' + n));
+      });
+    }
+
+    if (pg.key === 'danger' && pick.danger) {
+      box.appendChild(el('p', 'src', '自動判定：' + (pg.auto || []).map(function (x) {
+        return x.label + ' ' + (x.pct * 100).toFixed(1) + '%';
+      }).join('、')));
+      (pg.auto || []).forEach(function (x) {
+        if (x.note) box.appendChild(el('p', 'src', '・' + x.label + '：' + x.note));
+      });
+
+      var groups = {};
+      (pg.items || []).forEach(function (it) {
+        (groups[it.group] = groups[it.group] || []).push(it);
+      });
+      var grid = el('div', 'noprint-ctl');
+      grid.style.cssText = 'margin-top:6px;display:grid;'
+        + 'grid-template-columns:repeat(auto-fill,minmax(215px,1fr));gap:3px 12px';
+      Object.keys(groups).forEach(function (gk) {
+        var wrap = el('div');
+        wrap.style.cssText = 'padding:3px 0';
+        groups[gk].forEach(function (it) {
+          var l = el('label');
+          l.style.cssText = 'display:block;font-size:11.5px;line-height:1.5;'
+            + (it.disabled ? 'opacity:.45;' : 'cursor:pointer;');
+          var r = el('input');
+          r.type = 'radio'; r.name = 'dg_' + gk;
+          r.checked = pick.groups[gk] === it.key;
+          r.disabled = !!it.disabled;
+          r.style.cssText = 'width:auto;margin:0 4px 0 0;vertical-align:middle';
+          r.addEventListener('change', function () { pick.groups[gk] = it.key; calc(); });
+          l.appendChild(r);
+          l.appendChild(document.createTextNode(
+            it.label + '　' + (it.pct * 100).toFixed(0) + '%'));
+          if (it.disabled) l.appendChild(el('div', 'src warn', it.disabledReason));
+          wrap.appendChild(l);
+        });
+        var clr = el('button', null, '清除本組');
+        clr.style.cssText = 'margin-top:2px;padding:0 5px;font:inherit;font-size:10px;'
+          + 'cursor:pointer;border:1px solid var(--line);border-radius:3px;background:#fff';
+        clr.addEventListener('click', function () { delete pick.groups[gk]; calc(); });
+        wrap.appendChild(clr);
+        grid.appendChild(wrap);
+      });
+      box.appendChild(grid);
+
+      var g = pick._dangerGeneral || 0, ex = pick._dangerExtra || 0;
+      var sum = el('p', g > pg.caps.general ? 'src warn' : 'src');
+      sum.style.marginTop = '5px';
+      sum.textContent = '一般獎勵合計 ' + (g * 100).toFixed(1)
+        + '%（上限 ' + (pg.caps.general * 100) + '%）＋時程規模 '
+        + (ex * 100).toFixed(1) + '%（上限 ' + (pg.caps.extra * 100)
+        + '%）＝ ' + ((Math.min(g, pg.caps.general) + ex) * 100).toFixed(1) + '%';
+      box.appendChild(sum);
+      box.appendChild(el('p', 'src', '・' + pg.caps.generalNote));
+      box.appendChild(el('p', 'src', '・' + pg.caps.extraNote));
+      box.appendChild(el('p', 'src', '・申請順序：' + pg.order));
+      box.appendChild(el('p', 'src warn', '・' + pg.sunset));
+      box.appendChild(el('p', 'src', '・' + pg.eligibility));
+    }
+
+    if (pg.key === 'renew') {
+      var ul = el('ul');
+      ul.style.cssText = 'margin:4px 0 0;padding-left:17px;font-size:11px;'
+        + 'color:var(--ink-3);line-height:1.5';
+      (pg.caps || []).forEach(function (c) {
+        ul.appendChild(el('li', null, c.label + '：' + (c.text || '')));
+      });
+      box.appendChild(ul);
+      if (pg.localCap) box.appendChild(el('p', 'src', '・' + pg.localCap));
+      if (pg.dedup) box.appendChild(el('p', 'src', '・' + pg.dedup));
+      if (pg.eligibility) box.appendChild(el('p', 'src', '・' + pg.eligibility));
+    }
+
+    if (pg.key === 'openspace' && pg.eligible) {
+      box.appendChild(el('p', 'src', '公式：' + pg.formula + '　' + pg.iCap));
+      box.appendChild(el('p', 'src', pg.sMin));
+      box.appendChild(el('p', 'src warn', '・' + pg.capNote));
+    }
+
+    // 沿街步道退縮獎勵：不是固定百分比，是 △FA = S × I 算出來的
+    if (pg.key === 'walkway' && !pg.blocked) {
+      var lbw = el('label', 'noprint-ctl');
+      lbw.style.cssText = 'font-weight:700;cursor:pointer;display:block;margin-bottom:3px';
+      var cbw = el('input');
+      cbw.type = 'checkbox';
+      cbw.checked = !!pick.walkway;
+      cbw.disabled = !pg.deltaFA;
+      cbw.style.cssText = 'width:auto;margin:0 4px 0 0;vertical-align:middle';
+      cbw.addEventListener('change', function () { pick.walkway = this.checked; calc(); });
+      lbw.appendChild(cbw);
+      lbw.appendChild(document.createTextNode(
+        pg.deltaFA ? '本案採用（△FA ' + fmt(pg.deltaFA) + ' ㎡）' : '本案採用'));
+      box.insertBefore(lbw, box.firstChild.nextSibling);
+
+      box.appendChild(el('p', 'src', '適用時機：' + pg.trigger));
+      box.appendChild(el('p', 'src', '留設規格：' + pg.spec));
+      box.appendChild(el('p', 'src', '公式：' + pg.formula + '　' + pg.formulaNote));
+      box.appendChild(el('p', 'src', pg.coefWhy));
+      if (pg.coefCaution) box.appendChild(el('p', 'src warn', '⚠ ' + pg.coefCaution));
+      if (pg.calc) {
+        box.appendChild(el('p', 'src', '本案：' + pg.calc));
+      } else if (pg.need) {
+        box.appendChild(el('p', 'src warn', '⚠ ' + pg.need));
+      }
+      box.appendChild(el('p', 'src', '上限：' + pg.capRef));
+    }
+
+    // 臺灣省施行細則的獎勵容積總上限（非六都適用）
+    if (pg.key === 'provincial_cap') {
+      box.appendChild(el('p', 'src', pg.text));
+      var base = result && result.totals ? result.totals.baseFA : null;
+      if (base) {
+        var used = (result.totals.allowedFA - base
+          - (result.transferM2 || 0));
+        box.appendChild(el('p', 'src',
+          '一般地區上限＝法定容積 × 1.2，即獎勵增額 ≤ '
+          + fmt(base * pg.normal) + ' ㎡（法定容積 ' + fmt(base) + ' ㎡ 的 20%）；'
+          + '都市更新地區為 1.5 倍，增額 ≤ ' + fmt(base * pg.renewal) + ' ㎡。'));
+      }
+      box.appendChild(el('p', 'src', '・' + pg.note));
+      box.appendChild(el('p', 'src warn', '・' + pg.caution));
+    }
+
+    if (pg.key === 'nonurban') box.appendChild(el('p', 'src', pg.note));
+
+    s4.appendChild(box);
+  });
+
+  if (progs.planSpecific && progs.planSpecific.length) {
+    var ps = el('div', 'box bad');
+    ps.appendChild(el('strong', null,
+      '以下獎勵項目確實存在，但百分比訂在個別都市計畫的土管要點裡，'
+      + '本系統未逐案登錄 —— 請查證後用「＋新增獎勵容積」填入：'));
+    var pl = el('ul');
+    progs.planSpecific.forEach(function (x) {
+      var li = el('li');
+      li.appendChild(document.createTextNode(x.label + '（' + x.where + '）'));
+      if (x.seenIn) li.appendChild(el('div', 'src', '曾見於：' + x.seenIn));
+      if (x.lookup) {
+        var la = el('a', null, '查詢土管要點');
+        la.href = x.lookup; la.target = '_blank'; la.rel = 'noopener';
+        la.style.fontSize = '10.5px';
+        li.appendChild(document.createTextNode(' '));
+        li.appendChild(la);
+      }
+      pl.appendChild(li);
+    });
+    ps.appendChild(pl);
+    s4.appendChild(ps);
+  }
+  if (progs.localCaution) s4.appendChild(el('p', 'box', '⚠ ' + progs.localCaution));
+  return s4;
+}
+
+function reloadPrograms() {
+  if (!site) return;
+  var z = (site.zones && site.zones[0]) || {};
+  var q = '/api/bonuses?county=' + encodeURIComponent(site.county || '')
+    + '&urban=' + (z.kind === 'nurban' ? '0' : '1')
+    + '&zone=' + encodeURIComponent(z.name || '')
+    + '&designation=' + encodeURIComponent(z.designation || '')
+    + '&area=' + (site.totalAreaM2 || '')
+    + '&road=' + encodeURIComponent(roadW)
+    + '&date=' + encodeURIComponent(applyDate)
+    + '&frontage=' + encodeURIComponent(frontage);
+  fetch(q).then(function (r) { return r.json(); }).then(function (d) {
+    progs = d;
+    // 道路寬度一改，容積移轉的級距就換了 —— 已勾選的話要同步更新
+    var tp = (d.programs || []).filter(function (x) { return x.key === 'tdr'; })[0];
+    if (pick.tdr && tp && tp.pct != null) {
+      D.transfer = tp.pct;
+      pick._tdrSource = tp.source;
+      pick._tdrNote = tp.note;
+    }
+    calc();
+  });
+}
+
+function csv() {
+  if (!result) return;
+  var rows = [['區段', '項目', '算式', '面積(㎡)', '面積(坪)', '百分比', '備註', '依據']];
+  result.sections.forEach(function (s) {
+    s.rows.forEach(function (r) {
+      rows.push([s.title, r.label, r.formula || '', r.m2 == null ? '' : r.m2,
+        r.ping == null ? '' : r.ping, r.pct == null ? '' : r.pct, r.note || '',
+        r.source ? ((r.source.name || '') + ' ' + (r.source.article || ''))
+          : (r.assumed ? '設計條件／無法源' : '')]);
+    });
+  });
+  (result.checks || []).forEach(function (c) {
+    rows.push(['法規檢核', c.label, '', c.used, c.limit, '',
+      c.ok ? '符合' : '超過', (c.source && c.source.article) || '']);
+  });
+  var out = '﻿' + rows.map(function (r) {
+    return r.map(function (v) {
+      v = String(v == null ? '' : v);
+      return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v;
+    }).join(',');
+  }).join('\r\n');
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([out], { type: 'text/csv;charset=utf-8' }));
+  a.download = '開發面積預估表_' + ((site.parcels[0] || {}).sect || '') + '.csv';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
+}
+}());
+</script>
+</body>
+</html>
