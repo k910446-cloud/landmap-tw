@@ -1218,6 +1218,8 @@
           return;
         }
         showParcel(d.rings);
+        // 指路區塊（查不到使用分區時）要用「段名＋地號」，先記下來
+        state.lastParcelNo = d.landNo ? (d.landNo + '地號') : '';
         if (showLandNo) refreshParcels();
         var big = el('div', 'zval');
         big.appendChild(el('b', null, (d.sect || '') + ' ' + (d.landNo || '') + ' 地號'));
@@ -1292,7 +1294,7 @@
    * 這是做土地開發時的第一個問題 —— 框內走都市計畫法與各縣市施行細則，
    * 框外走區域計畫法與非都市土地使用管制規則，兩套法規完全不同。
    * 資料是自己的向量外框（urbanarea.js），所以不必等任何外部服務。 */
-  function showUrbanArea(ll, host, seq, alive) {
+  function showUrbanArea(ll, host, seq, alive, needHelp) {
     UrbanArea.find(ll.lat, ll.lng).then(function (a) {
       if (!alive(seq) || !a) return;
       var box = el('div', 'zrow');
@@ -1301,10 +1303,83 @@
       box.appendChild(big);
       box.appendChild(el('div', 'fineprint',
         '此點在都市計畫區內，適用都市計畫法與' + a.county + '的施行細則／自治條例。'));
+      if (needHelp) box.appendChild(zoneHelp(a, ll));
       box.appendChild(el('div', 'fineprint', a.notice || ''));
       host.insertBefore(box, host.firstChild);
     }).catch(function () { /* 沒收錄這個縣市就當作沒有，不吵使用者 */ });
   }
+
+  /* 知道在哪個計畫區，但查不出是住宅區還是商業區時該怎麼辦。
+   *
+   * 全國都市計畫的「使用分區」圖資是國土管理署的付費介接服務，
+   * 只有八個縣市自己另外公開，其餘縣市沒有任何公開服務查得到逐筆分區。
+   * 與其丟一句「線上版沒有這個縣市的都市計畫服務」讓人卡住，
+   * 不如把接下來真正該走的三條路擺出來，並且先把地號準備好。 */
+  function zoneHelp(area, ll) {
+    var box = el('div', 'zonehelp');
+    box.appendChild(el('b', null, '這塊地是什麼分區？'));
+    box.appendChild(el('div', 'fineprint',
+      '這個縣市沒有公開逐筆使用分區的圖服務，本 App 查不到。可循這三條路：'));
+
+    var ol = el('ol', 'zonehelp-list');
+
+    function step(text, links) {
+      var li = el('li', null, text);
+      (links || []).forEach(function (L) {
+        var a = el('a', 'zonehelp-link', L[0]);
+        a.href = L[1];
+        a.target = '_blank';
+        a.rel = 'noopener';
+        li.appendChild(a);
+      });
+      ol.appendChild(li);
+    }
+
+    step('申請「都市計畫土地使用分區證明」—— 這是唯一有法律效力的文件，開發案送件本來就要它。',
+      [['全國地政線上申辦', 'https://clir.land.moi.gov.tw/']]);
+    step('線上看一下（免費、即時，但不得作為證明）：',
+      [['國土管理署 全國土地使用分區查詢', 'https://luz.nlma.gov.tw/WEB/']]);
+    if (COUNTY_URBAN_SITE[area.county]) {
+      step('查該計畫區的土地使用分區管制要點（建蔽率、容積率、可做什麼）：',
+        [[area.county + ' 都市計畫網', COUNTY_URBAN_SITE[area.county]]]);
+    }
+    box.appendChild(ol);
+
+    /* 官方系統都要「段名＋地號」才查得到，先備好免得使用者自己抄。
+     *
+     * 文字要在按下去的當下才組 —— 分區查詢比地籍查詢快，這個區塊畫出來時
+     * 地號往往還沒回來（新竹縣的地籍服務一筆要二十秒）。先組好字串的話，
+     * 複製出來會少掉地號那一截。 */
+    if (state.lastAdmin && state.lastAdmin.sect) {
+      var cp = el('button', 'btn', '複製段名地號');
+      cp.type = 'button';
+      cp.addEventListener('click', function () {
+        var a2 = state.lastAdmin || {};
+        var txt = [(a2.cty || '') + (a2.town || ''), a2.sect || '',
+                   state.lastParcelNo || ''].filter(Boolean).join(' ');
+        copy(txt);
+        hint('已複製：' + txt, 3000);
+      });
+      box.appendChild(cp);
+    }
+    return box;
+  }
+
+  // 各縣市都市計畫主管機關的查詢網站（查得到管制要點的那種）
+  var COUNTY_URBAN_SITE = {
+    '新竹縣': 'https://urbanplan.hsinchu.gov.tw/',
+    '苗栗縣': 'https://www.miaoli.gov.tw/',
+    '宜蘭縣': 'https://bud.e-land.gov.tw/',
+    '花蓮縣': 'https://www.hl.gov.tw/',
+    '臺東縣': 'https://www.taitung.gov.tw/',
+    '南投縣': 'https://www.nantou.gov.tw/',
+    '雲林縣': 'https://www4.yunlin.gov.tw/',
+    '嘉義縣': 'https://www.cyhg.gov.tw/',
+    '屏東縣': 'https://www.pthg.gov.tw/',
+    '澎湖縣': 'https://www.penghu.gov.tw/',
+    '基隆市': 'https://www.klcg.gov.tw/',
+    '嘉義市': 'https://www.chiayi.gov.tw/'
+  };
 
   var zoningSeq = 0;
   function runZoning(ll, county) {
@@ -1321,7 +1396,11 @@
     }).then(function (d) {
       if (seq !== zoningSeq) return;
       host.textContent = '';
-      showUrbanArea(ll, host, seq, function (s) { return s === zoningSeq; });
+      // 這個縣市的都市計畫使用分區有沒有查出結果？沒有才需要指路。
+      var gotUrban = (d.layers || []).some(function (L) {
+        return L.key === 'urban_zone' && L.status === 'ok';
+      });
+      showUrbanArea(ll, host, seq, function (s) { return s === zoningSeq; }, !gotUrban);
       // 有答案的排前面；「這個縣市沒有這份資料」之類的收到最後，免得洗版
       var rank = { ok: 0, 'needs-download': 1, 'no-feature': 2, error: 3, unavailable: 4 };
       var layers = (d.layers || []).slice().sort(function (a, b) {

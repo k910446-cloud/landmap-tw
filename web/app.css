@@ -472,3 +472,11 @@ button.projname:active{transform:translateY(1px)}
   background:var(--brand-2,#2b7a4b);color:#fff;font-size:13px;font-weight:600;
   box-shadow:0 4px 14px rgba(0,0,0,.28)}
 .updatebar:active{opacity:.85}
+
+/* 查不到使用分區時的指路區塊 */
+.zonehelp{margin-top:8px;padding:9px 11px;border:1px solid var(--line);border-radius:8px;
+  background:rgba(127,127,127,.06)}
+.zonehelp>b{font-size:13px}
+.zonehelp-list{margin:6px 0 8px;padding-left:18px;font-size:12px;line-height:1.6;color:var(--ink-2)}
+.zonehelp-list li{margin-bottom:4px}
+.zonehelp-link{display:inline-block;margin-left:4px;color:#1864ab;text-decoration:underline}
