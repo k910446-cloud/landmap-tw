@@ -31,3 +31,13 @@ data/lvr/
 
 # 附表一 PDF（build_landuse.py 會自己抓）
 data/附表一.pdf
+
+# 容積分析（開發面積預估表）—— 還在開發中，先不進版控。
+# start.py 與 index.html 都已經不再依賴它們，檔案留在工作目錄裡繼續改。
+/rules.py
+/bonuses.py
+/far.py
+/web/far.html
+/tests/test_bonuses.py
+/tests/test_far.py
+/tests/test_merge.py
