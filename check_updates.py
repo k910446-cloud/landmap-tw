@@ -20,6 +20,7 @@
     python check_updates.py            # 全部檢查
     python check_updates.py --laws     # 只檢查法規
     python check_updates.py --prices   # 只檢查實價登錄
+    python check_updates.py --urban    # 只檢查都市計畫區清單
 """
 
 import argparse
@@ -107,6 +108,40 @@ def check_prices():
     return stale, ok
 
 
+def check_urban():
+    """都市計畫區的清單有沒有變動（新增、消失、改名）。
+
+    只比清單，不抓圖形 —— 一個縣市一個請求，幾秒鐘就跑完。
+    真的有變動時再由 build_urban_areas.py 去補那幾個。
+    """
+    import build_urban_areas as UA
+    out_dir = os.path.join(BASE_DIR, "web", "urban_areas")
+    if not os.path.isdir(out_dir):
+        return ["web/urban_areas/ 還沒產生"], []
+    sess = UA.Session()
+    stale, ok = [], []
+    total = 0
+    for code, name in UA.counties(sess.op):
+        have = UA.load_existing(name)
+        if not have:
+            continue
+        total += len(have)
+        try:
+            now = dict(UA.plans(sess.op, sess.token, code))
+        except Exception as e:
+            stale.append("%s 檢查失敗：%s" % (name, str(e)[:40]))
+            continue
+        added = [c for c in now if c not in have]
+        gone = [c for c in have if c not in now]
+        renamed = [c for c in now
+                   if c in have and have[c].get("name") != now[c]]
+        if added or gone or renamed:
+            stale.append("%s 都市計畫區有異動：新增 %d、消失 %d、改名 %d"
+                         % (name, len(added), len(gone), len(renamed)))
+    ok.append("都市計畫區收錄 %d 個" % total)
+    return stale, ok
+
+
 def check_datasets():
     """政府圖資的版本 —— 只報告目前用的是哪一版。
 
@@ -126,8 +161,9 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--laws", action="store_true")
     ap.add_argument("--prices", action="store_true")
+    ap.add_argument("--urban", action="store_true")
     args = ap.parse_args()
-    everything = not (args.laws or args.prices)
+    everything = not (args.laws or args.prices or args.urban)
 
     stale, ok = [], []
     try:
@@ -137,6 +173,10 @@ def main():
             ok += b
         if args.prices or everything:
             a, b = check_prices()
+            stale += a
+            ok += b
+        if args.urban or everything:
+            a, b = check_urban()
             stale += a
             ok += b
         if everything:

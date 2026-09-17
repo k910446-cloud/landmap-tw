@@ -176,10 +176,34 @@ class Session(object):
             return rings_of(self.op, self.token, plan_code)
 
 
-def build(sess, code, name, only=None):
-    got, failed = [], []
+def load_existing(name):
+    """已經抓過的那一份，回傳 {計畫區代碼: 該筆}。"""
+    path = os.path.join(OUT_DIR, name + ".json")
+    if not os.path.isfile(path):
+        return {}
+    try:
+        d = json.load(io.open(path, encoding="utf-8"))
+    except Exception:
+        return {}
+    return {p["code"]: p for p in d.get("plans", [])}
+
+
+def build(sess, code, name, incremental=False):
+    """抓一個縣市的所有計畫區。
+
+    incremental=True 時，代碼與名稱都沒變的計畫區沿用已經抓好的圖形，
+    只去要新增或改名的那幾個。都市計畫區的範圍一年只會動幾次，
+    每週把全國八百多個重抓一遍，對政府主機是沒必要的負擔。
+    """
+    got, failed, reused = [], [], 0
     op, token = sess.op, sess.token
+    have = load_existing(name) if incremental else {}
     for plan_code, plan_name in plans(op, token, code):
+        old = have.get(plan_code)
+        if old is not None and old.get("name") == plan_name:
+            got.append(old)
+            reused += 1
+            continue
         try:
             rings = sess.rings(plan_code)
         except Exception as e:
@@ -195,13 +219,13 @@ def build(sess, code, name, only=None):
         time.sleep(PAUSE)
 
     if not got:
-        return None, failed
+        return None, failed, reused
     os.makedirs(OUT_DIR, exist_ok=True)
     path = os.path.join(OUT_DIR, name + ".json")
     with io.open(path, "w", encoding="utf-8") as f:
         json.dump({"county": name, "source": SOURCE, "notice": NOTICE,
                    "plans": got}, f, ensure_ascii=False, separators=(",", ":"))
-    return path, failed
+    return path, failed, reused
 
 
 def write_index():
@@ -230,9 +254,43 @@ def write_index():
                   f, ensure_ascii=False, separators=(",", ":"))
 
 
+def check(sess, cty):
+    """只比對清單，不抓圖形。結束碼：0 都最新、1 有變動。
+
+    一個縣市一個請求（共 22 個），幾秒鐘就跑完 —— 排程可以每週問一次，
+    真的有變動才去跑要花一小時的完整抓取。
+    """
+    changes = []
+    for code, name in cty:
+        have = load_existing(name)
+        try:
+            now = plans(sess.op, sess.token, code)
+        except Exception as e:
+            print("%-5s 檢查失敗：%s" % (name, str(e)[:50]))
+            continue
+        now_map = {c: n for c, n in now}
+        added = [c for c in now_map if c not in have]
+        gone = [c for c in have if c not in now_map]
+        renamed = [c for c in now_map
+                   if c in have and have[c].get("name") != now_map[c]]
+        if added or gone or renamed:
+            changes.append("%s：新增 %d、消失 %d、改名 %d"
+                           % (name, len(added), len(gone), len(renamed)))
+    for line in changes:
+        print("  該更新 %s" % line)
+    if not changes:
+        print("都市計畫區清單沒有變動。")
+        return 0
+    return 1
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--county", action="append", help="只跑指定縣市（可重複）")
+    ap.add_argument("--check", action="store_true",
+                    help="只比對計畫區清單有沒有變動（結束碼 0 沒變、1 有變）")
+    ap.add_argument("--full", action="store_true",
+                    help="所有計畫區都重抓，不沿用既有圖形")
     args = ap.parse_args()
 
     sess = Session()
@@ -249,30 +307,38 @@ def main():
         print("沒有要處理的縣市")
         return 2
 
-    total_plans = 0
+    if args.check:
+        return check(sess, cty)
+
+    # 預設只補新增與改名的 —— 都市計畫區一年只動幾次，
+    # 每週把全國重抓一遍對政府主機是沒必要的負擔。--full 才整份重來。
+    incremental = not args.full
+    total_plans = total_reused = 0
     for code, name in cty:
         try:
-            path, failed = build(sess, code, name)
-        except Exception as e:
+            path, failed, reused = build(sess, code, name, incremental)
+        except Exception:
             # 這個縣市整個失敗（多半是 token 過期）——換一張再來一次
             sess.renew()
             try:
-                path, failed = build(sess, code, name)
+                path, failed, reused = build(sess, code, name, incremental)
             except Exception as e2:
                 print("%-5s 失敗：%s" % (name, str(e2)[:60]))
                 continue
+        total_reused += reused
         if path is None:
             print("%-5s 一個計畫區都沒取到" % name)
         else:
             d = json.load(io.open(path, encoding="utf-8"))
             total_plans += len(d["plans"])
-            print("%-5s %3d 個計畫區  %6.1f KB" % (
-                name, len(d["plans"]), os.path.getsize(path) / 1024.0))
+            print("%-5s %3d 個計畫區（沿用 %d）  %6.1f KB" % (
+                name, len(d["plans"]), reused, os.path.getsize(path) / 1024.0))
         for line in failed:
             print("       略過 %s" % line)
 
     write_index()
-    print("\n共 %d 個計畫區，輸出到 %s" % (total_plans, OUT_DIR))
+    print("\n共 %d 個計畫區（其中 %d 個沿用既有圖形），輸出到 %s"
+          % (total_plans, total_reused, OUT_DIR))
     print("資料來源：%s" % SOURCE)
     return 0
 

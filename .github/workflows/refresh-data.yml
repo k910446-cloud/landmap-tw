@@ -8,9 +8,13 @@ name: 更新資料
 
 on:
   schedule:
-    # 每月 5 日 02:00 UTC（臺灣早上 10 點）。實價登錄大約在季末後
-    # 一個半月發佈，每月檢查一次就一定接得到。
-    - cron: '0 2 5 * *'
+    # 每週一 02:00 UTC（臺灣早上 10 點）。
+    #
+    # 三份資料的更新頻率其實都不是每週：法規不定期修正、實價登錄每季發佈、
+    # 都市計畫區一年動幾次。每週跑的是「檢查」不是「重建」——
+    # 檢查很便宜（法規每部一個請求、實價登錄一個 HEAD、都市計畫區 22 個），
+    # 真的有變動才會去重建。所以頻率高一點只是早一點接到，不會多花什麼。
+    - cron: '0 2 * * 1'
   workflow_dispatch:
     inputs:
       force:
@@ -129,4 +133,43 @@ jobs:
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add web/prices
           git commit -m '自動更新：實價登錄成交資料' -m '由 refresh-data 排程重建，收錄至最新已發佈的季別。'
+          git push
+
+  urban:
+    name: 都市計畫區範圍
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      # --check 只比對各縣市的計畫區清單（22 個請求，幾秒鐘），
+      # 不去抓圖形。上游限制「請 5 秒後再查詢」，完整抓一輪要一個多小時，
+      # 沒變動就不該去打擾人家。
+      - name: 檢查計畫區清單有沒有變動
+        id: check
+        run: |
+          set +e
+          python build_urban_areas.py --check
+          code=$?
+          set -e
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+
+      # 這裡是增量：代碼與名稱都沒變的沿用既有圖形，只去要新增與改名的那幾個。
+      - name: 補抓有變動的計畫區
+        if: steps.check.outputs.code == '1' || inputs.force
+        run: python build_urban_areas.py
+
+      - name: 有變動才提交
+        if: steps.check.outputs.code == '1' || inputs.force
+        run: |
+          if git diff --quiet -- web/urban_areas; then
+            echo "重建後內容相同，不提交"
+            exit 0
+          fi
+          git config user.name  'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add web/urban_areas
+          git commit -m '自動更新：都市計畫區範圍' -m '由 refresh-data 排程重建。資料取自內政部國土管理署城鄉發展分署全國土地使用分區資料查詢系統，只補新增與改名的計畫區。'
           git push
