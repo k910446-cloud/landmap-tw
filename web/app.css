@@ -349,6 +349,11 @@ dd{margin:0;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
   border-radius:5px;padding:1px 5px}
 .dealproj{font-size:10.5px;color:#1864ab;border:1px solid #a5c8e8;background:#eef6fd;
   border-radius:5px;padding:1px 5px}
+/* 可以點去看位置的成交列 */
+.dealrow.is-jump{cursor:pointer;border-radius:7px;margin:0 -4px;padding-left:4px;padding-right:4px}
+.dealrow.is-jump:hover,.dealrow.is-jump:focus-visible{background:var(--hi,rgba(127,127,127,.12))}
+.dealno{font-size:10.5px;color:#7048e8;border:1px solid #c3b1f0;background:#f3efff;
+  border-radius:5px;padding:1px 5px;order:99}
 .dealzone{font-size:10.5px;color:#2b7a4b;border:1px solid #a8d5b8;background:#eefaf1;
   border-radius:5px;padding:1px 5px}
 .dealage{font-size:10.5px;color:var(--ink-3)}

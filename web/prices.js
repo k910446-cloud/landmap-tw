@@ -212,6 +212,11 @@
         areaM2: r[3],
         areaPing: r[3] ? Math.round(r[3] / PING * 100) / 100 : 0,
         kind: (meta.kinds || {})[String(r[4])] || '其他',
+        // 這筆成交座落的地號 —— 畫面上點一下就能跳到位置。
+        // 一筆交易可能橫跨好幾筆地號，parcelCount 是總筆數。
+        landNo8: r.__at ? r.__at.no8 : null,
+        landNo: r.__at ? eightToHuman(r.__at.no8) : null,
+        parcelCount: r.__at ? (1 + Object.keys(r.__at.more).length) : 1,
         age: (r[6] != null && r[6] > 0) ? r[6] : null,
         project: (r[7] != null && r[7] >= 0)
           ? (meta.projects || [])[r[7]] : null,
@@ -316,8 +321,15 @@
         Object.keys(sec).forEach(function (k) {
           sec[k].forEach(function (r) {
             var id = r[0] + '/' + r[1] + '/' + r[2] + '/' + r[3];
-            if (seen[id]) return;
-            seen[id] = 1;
+            if (seen[id]) {
+              // 跨多筆地號的同一筆交易 —— 把其餘地號記在第一筆上，
+              // 這樣點進去才知道基地不只一筆
+              if (seen[id].no8 !== k) seen[id].more[k] = 1;
+              return;
+            }
+            // 記住這筆成交掛在哪一筆地號底下，畫面上才能點了跳過去
+            seen[id] = { no8: k, more: {} };
+            r.__at = seen[id];
             all.push(r);
           });
         });

@@ -2107,7 +2107,9 @@
         var det = el('details', 'pricemore');
         det.appendChild(el('summary', null, '同段最近的成交（' + d.recent.length + ' 筆）'));
         var l2 = el('div', 'pricelist');
-        d.recent.forEach(function (t) { l2.appendChild(dealRow(t)); });
+        d.recent.forEach(function (t) {
+          l2.appendChild(dealRow(t, { county: county, sect: d.sect }));
+        });
         det.appendChild(l2);
         body.appendChild(det);
       }
@@ -2178,8 +2180,32 @@
     return (perPing / 10000).toFixed(1);
   }
 
-  function dealRow(t) {
+  /* 一列成交紀錄。
+   *
+   * 有地號的那幾列可以點 —— 「同段最近的成交」列的是整段的交易，
+   * 光看數字不知道是哪一塊地；點一下把地圖帶到那筆地號並框起來，
+   * 才看得出「這個價格是在哪個位置成交的」。
+   * 「這筆地號的成交」那幾列本來就在目前這塊地上，沒有地號可跳，
+   * 也就不會變成可點的。 */
+  function dealRow(t, ctx) {
     var row = el('div', 'dealrow');
+    if (ctx && ctx.county && ctx.sect && t.landNo) {
+      row.classList.add('is-jump');
+      row.setAttribute('role', 'button');
+      row.tabIndex = 0;
+      row.title = ctx.sect + ' ' + t.landNo + ' 地號　點一下跳到位置';
+      var go = function () {
+        findLandNo(ctx.county, ctx.sect, t.landNo, null);
+        hint('前往 ' + ctx.sect + ' ' + t.landNo + ' 地號'
+          + (t.parcelCount > 1 ? '（這筆交易共 ' + t.parcelCount + ' 筆地號）' : ''), 5000);
+      };
+      row.addEventListener('click', go);
+      row.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); }
+      });
+      row.appendChild(el('span', 'dealno', t.landNo + ' 地號'
+        + (t.parcelCount > 1 ? '等 ' + t.parcelCount + ' 筆' : '')));
+    }
     row.appendChild(el('span', 'dealdate', t.ymText));
     row.appendChild(el('span', 'dealkind', t.kind));
     row.appendChild(el('b', 'dealprice', t.totalWan + ' 萬'));
